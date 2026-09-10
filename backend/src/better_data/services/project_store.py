@@ -12,7 +12,20 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from better_data.config import Settings
-from better_data.models import ProjectRecord, ProjectStatus, TaskType
+from better_data.models import (
+    ColumnRole,
+    FieldConfigurationUpdate,
+    ProjectAnalysis,
+    ProjectRecord,
+    ProjectStatus,
+    RecommendationSelectionUpdate,
+    TaskType,
+)
+from better_data.services.analysis import (
+    RecommendationConflictError,
+    build_project_analysis,
+    validate_enabled_recommendations,
+)
 from better_data.services.profiling import profile_dataset
 
 
@@ -102,6 +115,7 @@ class ProjectStore:
             try:
                 record.profile = profile_dataset(destination, self.settings.profile_sample_rows)
                 record.status = ProjectStatus.READY
+                self._write_analysis(project_root, build_project_analysis(record))
             except Exception as exc:  # project remains inspectable after a profiling failure
                 record.status = ProjectStatus.FAILED
                 record.error = str(exc)
@@ -126,10 +140,7 @@ class ProjectStore:
         return sorted(records, key=lambda item: item.created_at, reverse=True)
 
     def get(self, project_id: str) -> ProjectRecord:
-        if not re.fullmatch(r"[0-9a-f]{32}", project_id):
-            raise KeyError(project_id)
-        project_root = (self.root / project_id).resolve()
-        self._assert_inside_library(project_root)
+        project_root = self._project_root(project_id)
         metadata = project_root / "project.json"
         if not metadata.is_file():
             raise KeyError(project_id)
@@ -138,8 +149,88 @@ class ProjectStore:
         except (OSError, ValueError) as exc:
             raise ValueError("项目元数据损坏，无法读取") from exc
 
+    def get_analysis(self, project_id: str) -> ProjectAnalysis:
+        project = self.get(project_id)
+        if project.status != ProjectStatus.READY or project.profile is None:
+            raise ValueError("项目尚未完成数据画像，无法确认字段")
+        project_root = self._project_root(project_id)
+        analysis_file = project_root / "analysis.json"
+        if analysis_file.is_file():
+            try:
+                return ProjectAnalysis.model_validate_json(analysis_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        analysis = build_project_analysis(project)
+        self._write_analysis(project_root, analysis)
+        return analysis
+
+    def update_fields(
+        self, project_id: str, update: FieldConfigurationUpdate
+    ) -> ProjectAnalysis:
+        project = self.get(project_id)
+        if project.profile is None:
+            raise ValueError("项目尚未生成可用的数据画像")
+        expected_names = [column.name for column in project.profile.columns]
+        provided_names = [field.name for field in update.fields]
+        if len(provided_names) != len(set(provided_names)):
+            raise ValueError("字段配置中包含重复字段")
+        missing = set(expected_names) - set(provided_names)
+        unknown = set(provided_names) - set(expected_names)
+        if missing or unknown:
+            details = []
+            if missing:
+                details.append(f"缺少字段：{', '.join(sorted(missing))}")
+            if unknown:
+                details.append(f"未知字段：{', '.join(sorted(unknown))}")
+            raise ValueError("；".join(details))
+
+        roles = {field.name: field.role for field in update.fields}
+        target_count = sum(role == ColumnRole.TARGET for role in roles.values())
+        if project.task_type in {TaskType.CLASSIFICATION, TaskType.REGRESSION} and target_count != 1:
+            raise ValueError("分类和回归任务必须且只能指定一个目标列")
+        if project.task_type in {TaskType.CLEANING, TaskType.CLUSTERING_PREP} and target_count:
+            raise ValueError("纯清洗和聚类预处理任务不使用目标列")
+
+        previous = self.get_analysis(project_id)
+        enabled_ids = {item.id for item in previous.recommendations if item.enabled}
+        analysis = build_project_analysis(
+            project,
+            saved_roles=roles,
+            enabled_ids=enabled_ids,
+            fields_confirmed=True,
+        )
+        validate_enabled_recommendations(
+            analysis.recommendations,
+            {item.id for item in analysis.recommendations if item.enabled},
+        )
+        self._write_analysis(self._project_root(project_id), analysis)
+        return analysis
+
+    def update_recommendations(
+        self, project_id: str, update: RecommendationSelectionUpdate
+    ) -> ProjectAnalysis:
+        analysis = self.get_analysis(project_id)
+        enabled_ids = set(update.enabled_ids)
+        if len(update.enabled_ids) != len(enabled_ids):
+            raise ValueError("启用建议列表中包含重复项")
+        validate_enabled_recommendations(analysis.recommendations, enabled_ids)
+        for recommendation in analysis.recommendations:
+            recommendation.enabled = recommendation.id in enabled_ids
+        self._write_analysis(self._project_root(project_id), analysis)
+        return analysis
+
+    def _project_root(self, project_id: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{32}", project_id):
+            raise KeyError(project_id)
+        project_root = (self.root / project_id).resolve()
+        self._assert_inside_library(project_root)
+        return project_root
+
     def _write_record(self, project_root: Path, record: ProjectRecord) -> None:
         self._write_json_atomic(project_root / "project.json", record.model_dump(mode="json"))
+
+    def _write_analysis(self, project_root: Path, analysis: ProjectAnalysis) -> None:
+        self._write_json_atomic(project_root / "analysis.json", analysis.model_dump(mode="json"))
 
     def _load_saved_library(self) -> Path | None:
         if not self.config_file.is_file():

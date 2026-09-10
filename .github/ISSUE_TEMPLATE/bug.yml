@@ -1,0 +1,28 @@
+name: 缺陷报告
+description: 报告可复现的问题
+title: "[缺陷] "
+labels: ["缺陷"]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请勿附加真实业务数据、访问令牌或敏感日志。

@@ -1,0 +1,24 @@
+name: 功能任务
+description: 记录一个可独立验证的产品或工程目标
+title: "[功能] "
+labels: ["功能"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标
+      description: 描述用户完成这项工作后获得的能力。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 列出可以明确验证的结果。
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: 风险与限制
+      description: 记录数据安全、性能、兼容性或依赖问题。

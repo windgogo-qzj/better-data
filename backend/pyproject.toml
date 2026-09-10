@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "better-data-backend"
+version = "0.1.0"
+description = "Better Data 本地数据预处理服务"
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.1",
+  "fastapi>=0.115",
+  "imbalanced-learn>=0.13",
+  "openpyxl>=3.1",
+  "polars>=1.17",
+  "pyarrow>=18",
+  "python-multipart>=0.0.12",
+  "scikit-learn>=1.6",
+  "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/better_data"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

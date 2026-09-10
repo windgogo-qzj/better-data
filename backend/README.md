@@ -35,7 +35,10 @@ backend/
 | --- | --- | --- |
 | `GET` | `/api/health` | 返回版本、离线状态和服务健康状态 |
 | `GET` | `/api/projects` | 返回本机项目列表 |
+| `GET` | `/api/projects/{project_id}` | 返回单个项目详情 |
 | `POST` | `/api/projects` | 接收任务类型和数据文件，创建项目并执行初始画像 |
+| `GET` | `/api/settings/project-library` | 返回项目库路径、可写状态、项目数和首次设置状态 |
+| `PUT` | `/api/settings/project-library` | 验证并保存新的项目库绝对路径 |
 | `GET` | `/api/docs` | FastAPI 自动生成的本地接口文档 |
 
 ## 本地存储
@@ -54,6 +57,8 @@ work/projects/<project-id>/
 ```
 
 `work/` 包含用户数据，已被 Git 忽略。不要把其中内容复制进测试、Issue 或 Pull Request。
+
+项目库根目录包含 `.better-data-library.json` 标记。系统只会接管空文件夹、已有标记的项目库或能识别的旧项目库；普通非空文件夹会被拒绝。全局选择默认写入 `work/app-settings.json`，更新采用临时文件原子替换。
 
 ## CSV 导入边界
 

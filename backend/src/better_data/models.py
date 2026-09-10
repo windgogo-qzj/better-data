@@ -55,3 +55,15 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     offline: bool
+
+
+class ProjectLibraryUpdate(BaseModel):
+    path: str = Field(min_length=1, max_length=1_024)
+
+
+class ProjectLibraryInfo(BaseModel):
+    path: str
+    exists: bool
+    writable: bool
+    project_count: int
+    needs_setup: bool

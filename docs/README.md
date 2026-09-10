@@ -6,6 +6,7 @@
 | [`requirements.md`](requirements.md) | 产品范围、用户流程和验收标准是什么？ |
 | [`architecture.md`](architecture.md) | 前后端如何协作？任务、存储和导出如何设计？ |
 | [`roadmap.md`](roadmap.md) | 项目按什么阶段开发？ |
+| [`development-log.md`](development-log.md) | 每个功能切片具体做了什么、为什么这样做、如何验证？ |
 | [`decisions/0001-local-first.md`](decisions/0001-local-first.md) | 为什么采用本地优先架构？ |
 | [`../uidesign.md`](../uidesign.md) | 页面配色、字体、间距、组件和可访问性遵循什么规范？ |
 

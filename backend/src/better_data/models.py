@@ -31,8 +31,10 @@ class ColumnProfile(BaseModel):
 
 class DatasetProfile(BaseModel):
     sampled_rows: int
+    is_sampled: bool
     column_count: int
     columns: list[ColumnProfile]
+    preview_rows: list[dict[str, str | None]]
     warnings: list[str] = Field(default_factory=list)
 
 

@@ -13,9 +13,10 @@
 | 项目 | 内容 |
 | --- | --- |
 | GitHub Issue | [#5 完成 CSV 流式导入与基础数据画像](https://github.com/windgogo-qzj/better-data/issues/5) |
+| Pull Request | [#11 完成 CSV 流式导入与基础数据画像](https://github.com/windgogo-qzj/better-data/pull/11) |
 | 分支 | `feat/5-csv-import-profile` |
 | 核心提交 | `6b32fa0 feat: 完善 CSV 导入与基础画像` |
-| 当前阶段 | 本地实现与测试完成，等待远端 PR 与 CI |
+| 当前阶段 | 本地验证与 GitHub Actions 已通过，等待合并 |
 
 ### 开发前审计
 
@@ -47,6 +48,8 @@
 5. 空文件、空表头、重复表头和非 UTF-8 编码。
 6. 不支持的扩展名。
 7. 文件超过上限后的错误响应和残留目录清理。
+
+GitHub Actions 在 Windows 环境重新执行前端构建和后端测试，两个任务均通过。Actions 对仍使用 Node.js 20 运行时的第三方 Action 给出弃用提示；项目应用使用的 Node.js 版本仍为 22.13.0，该提示不影响本次验收。
 
 ### 关键决策
 

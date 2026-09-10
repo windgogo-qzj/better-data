@@ -111,7 +111,9 @@ def test_unsupported_extension_is_rejected_without_creating_project(
 
     assert response.status_code == 422
     assert "仅支持 CSV 和 XLSX 文件" in response.json()["detail"]
-    assert list((tmp_path / "projects").iterdir()) == []
+    assert [item.name for item in (tmp_path / "projects").iterdir()] == [
+        ".better-data-library.json"
+    ]
 
 
 def test_oversized_upload_is_rejected_and_partial_project_is_removed(
@@ -130,4 +132,6 @@ def test_oversized_upload_is_rejected_and_partial_project_is_removed(
 
     assert response.status_code == 422
     assert "CSV 文件超过允许大小" in response.json()["detail"]
-    assert list((tmp_path / "projects").iterdir()) == []
+    assert [item.name for item in (tmp_path / "projects").iterdir()] == [
+        ".better-data-library.json"
+    ]

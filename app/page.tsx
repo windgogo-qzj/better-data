@@ -8,6 +8,7 @@ import {
   CircleHelp,
   Database,
   FileSpreadsheet,
+  FolderOpen,
   FolderKanban,
   HardDrive,
   Home,
@@ -15,6 +16,7 @@ import {
   ListChecks,
   LoaderCircle,
   Plus,
+  Save,
   Settings,
   ShieldCheck,
   UploadCloud,
@@ -22,6 +24,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +54,14 @@ type ProjectSummary = {
   source_size: number;
   created_at: string;
   profile?: { sampled_rows: number; column_count: number } | null;
+};
+
+type ProjectLibraryInfo = {
+  path: string;
+  exists: boolean;
+  writable: boolean;
+  project_count: number;
+  needs_setup: boolean;
 };
 
 type ModelContextLike = {
@@ -85,6 +96,7 @@ function projectStatus(status: string) {
 export default function HomePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
+  const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [taskType, setTaskType] = useState<TaskLabel>("分类");
@@ -94,16 +106,33 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [libraryInfo, setLibraryInfo] = useState<ProjectLibraryInfo | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [libraryPath, setLibraryPath] = useState("");
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("本地服务返回异常");
-        setServiceState("ready");
-        return response.json();
+    Promise.all([
+      fetch(`${API_BASE}/api/projects`, { signal: controller.signal }),
+      fetch(`${API_BASE}/api/settings/project-library`, { signal: controller.signal }),
+    ])
+      .then(async ([projectsResponse, libraryResponse]) => {
+        if (!projectsResponse.ok || !libraryResponse.ok) throw new Error("本地服务返回异常");
+        const [records, projectLibrary] = await Promise.all([
+          projectsResponse.json() as Promise<ProjectSummary[]>,
+          libraryResponse.json() as Promise<ProjectLibraryInfo>,
+        ]);
+        return { records, projectLibrary };
       })
-      .then((records: ProjectSummary[]) => setProjects(records))
+      .then(({ records, projectLibrary }) => {
+        setProjects(records);
+        setLibraryInfo(projectLibrary);
+        setLibraryPath(projectLibrary.path);
+        setServiceState("ready");
+        if (projectLibrary.needs_setup) setSettingsOpen(true);
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setServiceState("unavailable");
@@ -179,6 +208,43 @@ export default function HomePage() {
     setDialogOpen(true);
   }
 
+  function openSettings(event?: MouseEvent<HTMLButtonElement>) {
+    settingsReturnFocusRef.current = event?.currentTarget ?? null;
+    setLibraryPath(libraryInfo?.path ?? "");
+    setSettingsError(null);
+    setSettingsOpen(true);
+  }
+
+  async function saveProjectLibrary() {
+    const normalized = libraryPath.trim();
+    if (!normalized) {
+      setSettingsError("请输入项目库的绝对路径。");
+      return;
+    }
+    setSavingSettings(true);
+    setSettingsError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/settings/project-library`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: normalized }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? "项目库保存失败，请检查路径后重试。");
+      const updated = payload as ProjectLibraryInfo;
+      setLibraryInfo(updated);
+      setLibraryPath(updated.path);
+      const projectsResponse = await fetch(`${API_BASE}/api/projects`);
+      if (projectsResponse.ok) setProjects(await projectsResponse.json() as ProjectSummary[]);
+      setSettingsOpen(false);
+      setAnnouncement(`项目库已保存到“${updated.path}”。`);
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : "无法连接本地处理服务，请稍后重试。");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function createProject() {
     if (!selectedFile || fileIssue) return;
     setSubmitting(true);
@@ -237,8 +303,8 @@ export default function HomePage() {
           </a>
           <div className="nav-divider" />
           <p className="nav-section-label">系统</p>
-          <button className="nav-item nav-item-disabled" type="button" disabled title="即将开放">
-            <Settings aria-hidden="true" />设置<span className="nav-item-note">即将开放</span>
+          <button className="nav-item" type="button" onClick={openSettings}>
+            <Settings aria-hidden="true" />设置
           </button>
           <button className="nav-item nav-item-disabled" type="button" disabled title="即将开放">
             <CircleHelp aria-hidden="true" />使用帮助<span className="nav-item-note">即将开放</span>
@@ -278,6 +344,17 @@ export default function HomePage() {
               <Plus aria-hidden="true" />新建项目
             </Button>
           </section>
+
+          {libraryInfo?.needs_setup && (
+            <section className="setup-notice" aria-labelledby="setup-title">
+              <FolderOpen aria-hidden="true" />
+              <div>
+                <h2 id="setup-title">确认项目库位置</h2>
+                <p>首次使用请确认数据项目保存到哪个本机文件夹。当前默认位置仍可使用。</p>
+              </div>
+              <Button variant="outline" onClick={openSettings}>选择位置</Button>
+            </section>
+          )}
 
           <section className="metrics-grid" aria-labelledby="overview-title">
             <h2 id="overview-title" className="sr-only">项目概况</h2>
@@ -369,6 +446,7 @@ export default function HomePage() {
                 <dl className="system-list">
                   <div><dt>大型任务队列</dt><dd>{metrics[1].value === "0" ? "空闲" : `${metrics[1].value} 个运行中`}</dd></div>
                   <div><dt>项目库存储</dt><dd>{metrics[2].value}</dd></div>
+                  <div><dt>项目库位置</dt><dd className="library-path" title={libraryInfo?.path}>{libraryInfo?.path ?? "读取中"}</dd></div>
                   <div><dt>外部数据传输</dt><dd><ShieldCheck aria-hidden="true" />已关闭</dd></div>
                 </dl>
                 {serviceState === "unavailable" && (
@@ -422,6 +500,7 @@ export default function HomePage() {
         <a className="mobile-nav-item mobile-nav-active" href="#workspace" aria-current="page"><Home aria-hidden="true" /><span>工作台</span></a>
         <a className="mobile-nav-item" href="#projects"><FolderKanban aria-hidden="true" /><span>项目</span></a>
         <a className="mobile-nav-item" href="#system-status"><ListChecks aria-hidden="true" /><span>状态</span></a>
+        <button className="mobile-nav-item" type="button" onClick={openSettings}><Settings aria-hidden="true" /><span>设置</span></button>
       </nav>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setSubmitError(null); }}>
@@ -499,6 +578,57 @@ export default function HomePage() {
               {submitting ? "正在检查" : "创建并检查"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={settingsOpen} onOpenChange={(open) => { setSettingsOpen(open); if (!open) setSettingsError(null); }}>
+        <DialogContent
+          className="settings-dialog"
+          aria-describedby="settings-dialog-description"
+          onCloseAutoFocus={(event) => {
+            if (!settingsReturnFocusRef.current) return;
+            event.preventDefault();
+            settingsReturnFocusRef.current.focus();
+          }}
+        >
+          <DialogHeader className="dialog-header">
+            <DialogTitle>项目库设置</DialogTitle>
+            <DialogDescription id="settings-dialog-description">Better Data 会把原始文件副本、项目配置和处理结果保存在这个本机文件夹。</DialogDescription>
+          </DialogHeader>
+          <form
+            className="settings-form"
+            onSubmit={(event) => { event.preventDefault(); void saveProjectLibrary(); }}
+          >
+            <div className="settings-body">
+              <div className="form-group">
+                <label className="field-label" htmlFor="project-library-path">项目库绝对路径 <span aria-hidden="true">*</span></label>
+                <Input
+                  id="project-library-path"
+                  className="settings-path-input"
+                  value={libraryPath}
+                  onChange={(event) => setLibraryPath(event.target.value)}
+                  aria-describedby={`project-library-helper${settingsError ? " project-library-error" : ""}`}
+                  aria-invalid={Boolean(settingsError)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="例如 D:\\Better Data Projects"
+                />
+                <p id="project-library-helper" className="field-helper">请选择空文件夹或已有 Better Data 项目库。普通非空文件夹不会被接管。</p>
+                {settingsError && <p id="project-library-error" className="field-error" role="alert">{settingsError}</p>}
+              </div>
+              <div className="library-safety-note">
+                <ShieldCheck aria-hidden="true" />
+                <div><strong>安全保护</strong><p>系统会写入项目库标记，并拒绝覆盖普通非空文件夹。切换位置不会移动或删除原项目库。</p></div>
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <Button type="button" variant="outline" onClick={() => setSettingsOpen(false)} disabled={savingSettings}>取消</Button>
+              <Button type="submit" disabled={!libraryPath.trim() || savingSettings} aria-busy={savingSettings}>
+                {savingSettings ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
+                {savingSettings ? "正在保存" : "保存项目库"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

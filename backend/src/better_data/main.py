@@ -7,7 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from better_data import __version__
 from better_data.config import settings
-from better_data.models import HealthResponse, ProjectRecord, TaskType
+from better_data.models import (
+    HealthResponse,
+    ProjectLibraryInfo,
+    ProjectLibraryUpdate,
+    ProjectRecord,
+    TaskType,
+)
 from better_data.services.project_store import ProjectStore
 
 store = ProjectStore(settings)
@@ -30,7 +36,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Content-Type", "X-Better-Data-Token"],
 )
 
@@ -43,6 +49,29 @@ def health() -> HealthResponse:
 @app.get("/api/projects", response_model=list[ProjectRecord])
 def list_projects() -> list[ProjectRecord]:
     return store.list()
+
+
+@app.get("/api/projects/{project_id}", response_model=ProjectRecord)
+def get_project(project_id: str) -> ProjectRecord:
+    try:
+        return store.get(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/settings/project-library", response_model=ProjectLibraryInfo)
+def get_project_library() -> ProjectLibraryInfo:
+    return ProjectLibraryInfo.model_validate(store.library_info())
+
+
+@app.put("/api/settings/project-library", response_model=ProjectLibraryInfo)
+def update_project_library(update: ProjectLibraryUpdate) -> ProjectLibraryInfo:
+    try:
+        return ProjectLibraryInfo.model_validate(store.set_library(update.path))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/projects", response_model=ProjectRecord, status_code=201)

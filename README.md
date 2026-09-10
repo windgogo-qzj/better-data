@@ -22,7 +22,7 @@ Better Data 是一个面向数据分析人员的 Windows 本地数据预处理�
 - CSV、可选 XLSX 或完整 ZIP 结果包导出
 - 单文件离线 HTML 报告和可复现 Python 脚本
 
-详细需求见 [产品需求规格](docs/requirements.md)，技术设计见 [系统架构](docs/architecture.md)。
+详细需求见 [产品需求规格](docs/requirements.md)，技术设计见 [系统架构](docs/architecture.md)，界面实现遵循 [设计系统](uidesign.md)。
 
 ## 技术方向
 

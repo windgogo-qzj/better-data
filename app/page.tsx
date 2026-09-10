@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Activity,
-  Bell,
+  Check,
   ChevronRight,
   CircleHelp,
   Database,
@@ -11,11 +11,12 @@ import {
   FolderKanban,
   HardDrive,
   Home,
+  Info,
   ListChecks,
+  LoaderCircle,
   Plus,
   Settings,
   ShieldCheck,
-  LoaderCircle,
   UploadCloud,
 } from "lucide-react";
 
@@ -29,13 +30,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const taskTypes = ["分类", "回归", "聚类预处理", "纯数据清洗"] as const;
-const taskTypeCodes = {
-  分类: "classification",
-  回归: "regression",
-  聚类预处理: "clustering_prep",
-  纯数据清洗: "cleaning",
-} as const;
+const taskTypes = [
+  { label: "分类", code: "classification", description: "为分类模型准备特征与标签" },
+  { label: "回归", code: "regression", description: "为连续数值预测清洗数据" },
+  { label: "聚类预处理", code: "clustering_prep", description: "完成聚类前处理与效果评估" },
+  { label: "纯数据清洗", code: "cleaning", description: "只修复质量问题并导出数据" },
+] as const;
+
+type TaskLabel = (typeof taskTypes)[number]["label"];
+type ServiceState = "connecting" | "ready" | "unavailable";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
 type ProjectSummary = {
@@ -64,25 +68,47 @@ type ModelContextLike = {
 };
 
 function formatBytes(size: number) {
+  if (size === 0) return "0 B";
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function projectStatus(status: string) {
+  if (status === "ready") return { label: "待确认", className: "status-warning" };
+  if (["processing", "running"].includes(status)) return { label: "处理中", className: "status-info" };
+  if (["complete", "completed"].includes(status)) return { label: "已完成", className: "status-success" };
+  if (status === "failed") return { label: "失败", className: "status-error" };
+  return { label: status, className: "status-neutral" };
 }
 
 export default function HomePage() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [taskType, setTaskType] = useState<(typeof taskTypes)[number]>("分类");
+  const [taskType, setTaskType] = useState<TaskLabel>("分类");
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [serviceState, setServiceState] = useState<ServiceState>("connecting");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects`)
-      .then((response) => response.ok ? response.json() : [])
+    const controller = new AbortController();
+    fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("本地服务返回异常");
+        setServiceState("ready");
+        return response.json();
+      })
       .then((records: ProjectSummary[]) => setProjects(records))
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setServiceState("unavailable");
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -96,7 +122,7 @@ export default function HomePage() {
       inputSchema: {
         type: "object",
         properties: {
-          taskType: { type: "string", enum: Object.values(taskTypeCodes) },
+          taskType: { type: "string", enum: taskTypes.map((item) => item.code) },
         },
         required: ["taskType"],
         additionalProperties: false,
@@ -106,9 +132,9 @@ export default function HomePage() {
         const value = typeof input === "object" && input !== null && "taskType" in input
           ? String((input as { taskType: unknown }).taskType)
           : "";
-        const selected = taskTypes.find((label) => taskTypeCodes[label] === value);
+        const selected = taskTypes.find((item) => item.code === value);
         if (!selected) throw new Error("不支持的任务类型");
-        setTaskType(selected);
+        setTaskType(selected.label);
         setDialogOpen(true);
         return { status: "ready_for_file_selection", taskType: value };
       },
@@ -120,17 +146,37 @@ export default function HomePage() {
     if (!selectedFile) return null;
     const extension = selectedFile.name.split(".").pop()?.toLowerCase();
     if (!extension || !["csv", "xlsx"].includes(extension)) {
-      return "目前仅支持 CSV 和 XLSX 文件";
+      return "仅支持 CSV 和 XLSX 文件，请重新选择。";
     }
     const limit = extension === "csv" ? 1024 : 200;
     if (selectedFile.size > limit * 1024 * 1024) {
-      return `${extension.toUpperCase()} 文件不能超过 ${limit} MB`;
+      return `${extension.toUpperCase()} 文件超过 ${limit} MB，请拆分或压缩数据后重试。`;
     }
     return null;
   }, [selectedFile]);
 
+  const metrics = useMemo(() => {
+    const activeCount = projects.filter((project) => ["processing", "running"].includes(project.status)).length;
+    const storage = projects.reduce((total, project) => total + project.source_size, 0);
+    return [
+      { label: "本地项目", value: String(projects.length), note: projects.length ? "保存在本机" : "还没有项目", icon: FolderKanban, tone: "blue" },
+      { label: "运行中任务", value: String(activeCount), note: activeCount ? "后台处理中" : "队列空闲", icon: Activity, tone: "green" },
+      { label: "项目库占用", value: formatBytes(storage), note: "原始文件统计", icon: HardDrive, tone: "amber" },
+    ];
+  }, [projects]);
+
+  const selectedTask = taskTypes.find((item) => item.label === taskType) ?? taskTypes[0];
+
   function acceptFiles(files: FileList | null) {
-    if (files?.[0]) setSelectedFile(files[0]);
+    if (!files?.[0]) return;
+    setSelectedFile(files[0]);
+    setSubmitError(null);
+  }
+
+  function openProjectDialog(event?: MouseEvent<HTMLButtonElement>) {
+    dialogReturnFocusRef.current = event?.currentTarget ?? null;
+    setSubmitError(null);
+    setDialogOpen(true);
   }
 
   async function createProject() {
@@ -139,181 +185,322 @@ export default function HomePage() {
     setSubmitError(null);
     const form = new FormData();
     form.append("name", selectedFile.name.replace(/\.(csv|xlsx)$/i, ""));
-    form.append("task_type", taskTypeCodes[taskType]);
+    form.append("task_type", selectedTask.code);
     form.append("dataset", selectedFile);
     try {
       const response = await fetch(`${API_BASE}/api/projects`, { method: "POST", body: form });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "项目创建失败");
+      if (!response.ok) throw new Error(payload.detail ?? "项目创建失败，请检查文件后重试。");
       setProjects((current) => [payload as ProjectSummary, ...current]);
+      setServiceState("ready");
       setDialogOpen(false);
       setSelectedFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      setAnnouncement(`项目“${(payload as ProjectSummary).name}”已创建，正在等待确认。`);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "无法连接本地处理服务");
+      setSubmitError(error instanceof Error ? error.message : "无法连接本地处理服务，请启动服务后重试。");
     } finally {
       setSubmitting(false);
     }
   }
 
+  const serviceCopy = serviceState === "ready"
+    ? { label: "本地服务已连接", shortLabel: "本地运行", className: "service-ready" }
+    : serviceState === "unavailable"
+      ? { label: "本地服务未连接", shortLabel: "服务未连接", className: "service-error" }
+      : { label: "正在连接本地服务", shortLabel: "正在连接", className: "service-pending" };
+
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-white/10 bg-[#0b1736] text-white lg:flex">
-        <div className="flex h-[76px] items-center gap-3 border-b border-white/10 px-6">
-          <div className="grid size-10 place-items-center rounded-xl bg-[#6ae0c1] text-[#071630] shadow-[0_8px_24px_rgba(106,224,193,.24)]">
-            <Database className="size-5" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="text-[17px] font-semibold tracking-tight">Better Data</div>
-            <div className="text-xs text-slate-400">本地数据工作台</div>
-          </div>
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">跳到主要内容</a>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
+
+      <aside className="desktop-sidebar" aria-label="侧栏">
+        <div className="brand-lockup">
+          <span className="brand-mark"><Database aria-hidden="true" /></span>
+          <span>
+            <strong>Better Data</strong>
+            <small>本地数据工作台</small>
+          </span>
         </div>
 
-        <nav className="flex-1 px-3 py-5" aria-label="主导航">
-          <p className="px-3 pb-2 text-xs font-medium text-slate-500">工作区</p>
-          <a className="nav-item nav-item-active" href="#workspace"><Home className="size-[18px]" />首页</a>
-          <a className="nav-item" href="#projects"><FolderKanban className="size-[18px]" />项目</a>
-          <a className="nav-item" href="#tasks"><ListChecks className="size-[18px]" />处理任务</a>
-          <div className="my-5 border-t border-white/10" />
-          <p className="px-3 pb-2 text-xs font-medium text-slate-500">系统</p>
-          <a className="nav-item" href="#settings"><Settings className="size-[18px]" />设置</a>
-          <a className="nav-item" href="#help"><CircleHelp className="size-[18px]" />使用帮助</a>
+        <nav className="sidebar-nav" aria-label="主导航">
+          <p className="nav-section-label">工作区</p>
+          <a className="nav-item nav-item-active" href="#workspace" aria-current="page">
+            <Home aria-hidden="true" />工作台
+          </a>
+          <a className="nav-item" href="#projects">
+            <FolderKanban aria-hidden="true" />最近项目
+          </a>
+          <a className="nav-item" href="#system-status">
+            <ListChecks aria-hidden="true" />系统状态
+          </a>
+          <div className="nav-divider" />
+          <p className="nav-section-label">系统</p>
+          <button className="nav-item nav-item-disabled" type="button" disabled title="即将开放">
+            <Settings aria-hidden="true" />设置<span className="nav-item-note">即将开放</span>
+          </button>
+          <button className="nav-item nav-item-disabled" type="button" disabled title="即将开放">
+            <CircleHelp aria-hidden="true" />使用帮助<span className="nav-item-note">即将开放</span>
+          </button>
         </nav>
 
-        <div className="m-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4 text-[#6ae0c1]" />数据留在本机</div>
-          <p className="text-xs leading-5 text-slate-400">分析、处理与报告均在本地完成。</p>
+        <div className="privacy-note">
+          <div><ShieldCheck aria-hidden="true" /><strong>数据留在本机</strong></div>
+          <p>解析、处理、报告与任务记录都不会上传到外部服务。</p>
         </div>
       </aside>
 
-      <section className="min-h-screen lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-border/80 bg-background/90 px-5 backdrop-blur-xl sm:px-8">
-          <div className="flex items-center gap-3 lg:hidden">
-            <div className="grid size-9 place-items-center rounded-xl bg-[#0b1736] text-[#6ae0c1]"><Database className="size-[18px]" /></div>
-            <span className="font-semibold">Better Data</span>
+      <div className="page-frame">
+        <header className="topbar">
+          <div className="mobile-brand">
+            <span className="brand-mark"><Database aria-hidden="true" /></span>
+            <span><strong>Better Data</strong><small>数据工作台</small></span>
           </div>
-          <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
-            <span>项目库</span><ChevronRight className="size-4" /><span className="text-foreground">工作台</span>
+          <div className="breadcrumb" aria-label="当前位置">
+            <span>项目库</span><ChevronRight aria-hidden="true" /><strong>工作台</strong>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="h-8 gap-2 rounded-full border-emerald-200 bg-emerald-50 px-3 font-medium text-emerald-700"><span className="size-2 rounded-full bg-emerald-500" />离线运行</Badge>
-            <Button variant="ghost" size="icon" aria-label="通知"><Bell className="size-[18px]" /></Button>
-          </div>
+          <Badge variant="outline" className={`service-badge ${serviceCopy.className}`}>
+            {serviceState === "connecting" ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <span className="service-dot" aria-hidden="true" />}
+            <span className="service-label-long">{serviceCopy.label}</span>
+            <span className="service-label-short">{serviceCopy.shortLabel}</span>
+          </Badge>
         </header>
 
-        <div id="workspace" className="mx-auto w-full max-w-[1420px] px-5 py-8 sm:px-8 sm:py-10">
-          <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <main id="main-content" className="main-content" tabIndex={-1}>
+          <section id="workspace" className="page-heading" aria-labelledby="page-title">
             <div>
-              <p className="mb-2 text-sm font-medium text-[#167f73]">数据工作台</p>
-              <h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">从原始表格到可用数据</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">上传数据，检查系统建议，再执行一套可追踪、可复现的预处理流程。</p>
+              <p className="eyebrow">数据工作台</p>
+              <h1 id="page-title">从原始表格到可用数据</h1>
+              <p>上传数据、审阅系统建议，然后执行一套可追踪、可调整、可复现的预处理流程。</p>
             </div>
-            <Button className="h-11 gap-2 rounded-xl bg-[#0b1736] px-5 text-white hover:bg-[#142651]" onClick={() => setDialogOpen(true)}><Plus className="size-4" />新建项目</Button>
-          </div>
+            <Button size="lg" className="primary-action" onClick={openProjectDialog}>
+              <Plus aria-hidden="true" />新建项目
+            </Button>
+          </section>
 
-          <section className="mb-6 grid gap-4 sm:grid-cols-3" aria-label="项目概况">
-            {[
-              { label: "本地项目", value: String(projects.length), note: projects.length ? "保存在本机" : "还没有项目", icon: FolderKanban, tone: "blue" },
-              { label: "运行中任务", value: "0", note: "队列空闲", icon: Activity, tone: "green" },
-              { label: "项目库占用", value: "0 B", note: "存储空间充足", icon: HardDrive, tone: "amber" },
-            ].map((item) => (
+          <section className="metrics-grid" aria-labelledby="overview-title">
+            <h2 id="overview-title" className="sr-only">项目概况</h2>
+            {metrics.map((item) => (
               <article key={item.label} className="metric-card">
-                <div className={`metric-icon metric-icon-${item.tone}`}><item.icon className="size-5" /></div>
-                <div><p className="text-sm text-muted-foreground">{item.label}</p><div className="mt-1 flex items-baseline gap-2"><strong className="text-2xl font-semibold">{item.value}</strong><span className="text-xs text-muted-foreground">{item.note}</span></div></div>
+                <span className={`metric-icon metric-icon-${item.tone}`}><item.icon aria-hidden="true" /></span>
+                <div>
+                  <p>{item.label}</p>
+                  <div><strong>{item.value}</strong><span>{item.note}</span></div>
+                </div>
               </article>
             ))}
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <article className="overflow-hidden rounded-3xl border border-border bg-card shadow-[0_18px_50px_rgba(16,35,66,.06)]">
-              <div className="border-b border-border px-6 py-5 sm:px-7">
-                <div className="flex items-center justify-between">
-                  <div><h2 className="text-lg font-semibold">开始第一个项目</h2><p className="mt-1 text-sm text-muted-foreground">选择一份表格，系统会先检查结构与质量。</p></div>
-                  <FileSpreadsheet className="size-6 text-[#167f73]" />
+          <div className="workspace-grid">
+            <section className="panel upload-panel" aria-labelledby="upload-title">
+              <div className="panel-header">
+                <div>
+                  <p className="panel-kicker">新建流程</p>
+                  <h2 id="upload-title">导入一份表格</h2>
+                  <p>系统将先检查字段结构、缺失值与潜在风险，不会立即修改原始数据。</p>
                 </div>
+                <span className="panel-header-icon"><FileSpreadsheet aria-hidden="true" /></span>
               </div>
-              <div className="p-5 sm:p-7">
+
+              <div className="panel-body">
                 <button
                   type="button"
                   className={`upload-zone ${dragging ? "upload-zone-active" : ""}`}
-                  onClick={() => inputRef.current?.click()}
+                  aria-describedby="upload-guidance upload-privacy"
+                  onClick={(event) => {
+                    dialogReturnFocusRef.current = event.currentTarget;
+                    inputRef.current?.click();
+                  }}
                   onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFiles(event.dataTransfer.files); setDialogOpen(true); }}
+                  onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragging(false);
+                    dialogReturnFocusRef.current = event.currentTarget;
+                    acceptFiles(event.dataTransfer.files);
+                    setDialogOpen(true);
+                  }}
                 >
-                  <span className="upload-icon"><UploadCloud className="size-7" /></span>
-                  <span className="text-base font-semibold">拖放 CSV 或 XLSX 文件</span>
-                  <span className="text-sm text-muted-foreground">或者点击选择本机文件</span>
-                  <span className="mt-2 text-xs text-muted-foreground">CSV 最大 1 GB · XLSX 最大 200 MB</span>
+                  <span className="upload-icon"><UploadCloud aria-hidden="true" /></span>
+                  <span className="upload-title">{dragging ? "松开鼠标以选择文件" : "拖放 CSV 或 XLSX 文件"}</span>
+                  <span className="upload-subtitle">也可以点击此处浏览本机文件</span>
+                  <span id="upload-guidance" className="upload-limits">CSV 最大 1 GB · XLSX 最大 200 MB</span>
+                  <span id="upload-privacy" className="upload-privacy"><ShieldCheck aria-hidden="true" />仅在本机读取</span>
                 </button>
-                <input ref={inputRef} className="sr-only" type="file" accept=".csv,.xlsx" onChange={(event) => { acceptFiles(event.target.files); setDialogOpen(true); }} />
+                <input
+                  ref={inputRef}
+                  id="dataset-file"
+                  className="sr-only"
+                  type="file"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(event) => { acceptFiles(event.target.files); setDialogOpen(true); }}
+                />
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <ol className="process-steps" aria-label="处理步骤">
                   {[
                     ["01", "确认字段", "检查类型、目标列与敏感字段"],
-                    ["02", "审阅建议", "了解每项处理的依据和风险"],
-                    ["03", "导出结果", "获得数据、报告和复现脚本"],
+                    ["02", "审阅建议", "了解每项处理的依据和影响"],
+                    ["03", "导出结果", "获得数据、报告、记录与脚本"],
                   ].map(([index, title, note]) => (
-                    <div key={index} className="rounded-2xl bg-secondary/70 p-4"><span className="text-xs font-semibold text-[#167f73]">{index}</span><h3 className="mt-2 text-sm font-semibold">{title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{note}</p></div>
+                    <li key={index}>
+                      <span>{index}</span>
+                      <div><h3>{title}</h3><p>{note}</p></div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
-            </article>
+            </section>
 
-            <aside className="space-y-6">
-              <article className="rounded-3xl bg-[#0b1736] p-6 text-white shadow-[0_18px_50px_rgba(11,23,54,.18)]">
-                <div className="mb-6 flex items-center justify-between"><h2 className="font-semibold">本机处理能力</h2><Badge className="border-0 bg-white/10 text-slate-200">已就绪</Badge></div>
-                <dl className="space-y-4 text-sm">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4"><dt className="text-slate-400">大型任务队列</dt><dd>空闲</dd></div>
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4"><dt className="text-slate-400">项目库</dt><dd>等待选择</dd></div>
-                  <div className="flex items-center justify-between"><dt className="text-slate-400">外部数据传输</dt><dd className="text-[#6ae0c1]">已关闭</dd></div>
+            <aside id="system-status" className="side-column" aria-label="系统信息">
+              <section className="system-panel" aria-labelledby="system-title">
+                <div className="system-heading">
+                  <div><p>本机处理能力</p><h2 id="system-title">运行环境</h2></div>
+                  <Badge className={serviceState === "ready" ? "status-success" : serviceState === "unavailable" ? "status-error" : "status-neutral"}>
+                    {serviceState === "ready" ? <Check aria-hidden="true" /> : <Info aria-hidden="true" />}
+                    {serviceState === "ready" ? "已就绪" : serviceState === "unavailable" ? "需启动" : "检查中"}
+                  </Badge>
+                </div>
+                <dl className="system-list">
+                  <div><dt>大型任务队列</dt><dd>{metrics[1].value === "0" ? "空闲" : `${metrics[1].value} 个运行中`}</dd></div>
+                  <div><dt>项目库存储</dt><dd>{metrics[2].value}</dd></div>
+                  <div><dt>外部数据传输</dt><dd><ShieldCheck aria-hidden="true" />已关闭</dd></div>
                 </dl>
-              </article>
-
-              <article id="projects" className="rounded-3xl border border-border bg-card p-6">
-                <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">最近项目</h2><Button variant="ghost" size="sm" className="text-muted-foreground">查看全部</Button></div>
-                {projects.length ? (
-                  <div className="space-y-2">
-                    {projects.slice(0, 3).map((project) => (
-                      <div key={project.id} className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/35 p-3">
-                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-[#167f73]"><FileSpreadsheet className="size-[18px]" /></span>
-                        <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{project.name}</p><p className="truncate text-xs text-muted-foreground">{project.source_filename} · {formatBytes(project.source_size)}</p></div>
-                        <Badge variant="outline" className="shrink-0">{project.status === "ready" ? "待确认" : project.status}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border bg-secondary/40 px-5 py-8 text-center"><FolderKanban className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">暂无项目</p><p className="mt-1 text-xs text-muted-foreground">创建后可在这里继续处理</p></div>
+                {serviceState === "unavailable" && (
+                  <p className="service-help" role="status"><Info aria-hidden="true" />启动本地后端服务后刷新页面，即可创建项目。</p>
                 )}
-              </article>
-            </aside>
-          </section>
-        </div>
-      </section>
+              </section>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-xl rounded-3xl p-0 sm:max-w-xl">
-          <DialogHeader className="border-b border-border px-6 py-5 text-left"><DialogTitle>创建数据项目</DialogTitle><DialogDescription>选择数据文件和后续任务，下一步将进行本地结构检查。</DialogDescription></DialogHeader>
-          <div className="space-y-6 px-6 py-5">
-            <div>
-              <p className="mb-2 text-sm font-medium">数据文件</p>
-              <button type="button" className="flex w-full items-center gap-4 rounded-2xl border border-border bg-secondary/50 p-4 text-left hover:border-[#65b9ac]" onClick={() => inputRef.current?.click()}>
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-[#167f73] shadow-sm"><FileSpreadsheet className="size-5" /></span>
-                {selectedFile ? <span className="min-w-0"><strong className="block truncate text-sm">{selectedFile.name}</strong><span className="text-xs text-muted-foreground">{formatBytes(selectedFile.size)}</span></span> : <span><strong className="block text-sm">选择 CSV 或 XLSX 文件</strong><span className="text-xs text-muted-foreground">数据只会在本机读取</span></span>}
+              <section className="local-note" aria-labelledby="local-title">
+                <ShieldCheck aria-hidden="true" />
+                <div><h2 id="local-title">本地优先</h2><p>页面关闭后，大型处理任务仍可继续；重新打开网站即可查看进度。</p></div>
+              </section>
+            </aside>
+          </div>
+
+          <section id="projects" className="panel projects-panel" aria-labelledby="projects-title">
+            <div className="panel-header compact-header">
+              <div><p className="panel-kicker">继续工作</p><h2 id="projects-title">最近项目</h2></div>
+              <span className="project-count">共 {projects.length} 个</span>
+            </div>
+            <div className="projects-body">
+              {projects.length ? (
+                <ul className="project-list">
+                  {projects.slice(0, 5).map((project) => {
+                    const status = projectStatus(project.status);
+                    return (
+                      <li key={project.id} className="project-row">
+                        <span className="project-icon"><FileSpreadsheet aria-hidden="true" /></span>
+                        <div className="project-main">
+                          <h3>{project.name}</h3>
+                          <p>{project.source_filename}<span aria-hidden="true"> · </span>{formatBytes(project.source_size)}</p>
+                        </div>
+                        {project.profile && <span className="project-meta">{project.profile.column_count} 列 · 抽样 {project.profile.sampled_rows} 行</span>}
+                        <Badge variant="outline" className={status.className}>{status.label}</Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="empty-state">
+                  <span><FolderKanban aria-hidden="true" /></span>
+                  <div><h3>还没有项目</h3><p>上传第一份表格后，可在这里继续配置和处理。</p></div>
+                  <Button variant="outline" onClick={openProjectDialog}>选择文件</Button>
+                </div>
+              )}
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <nav className="mobile-nav" aria-label="移动端主导航">
+        <a className="mobile-nav-item mobile-nav-active" href="#workspace" aria-current="page"><Home aria-hidden="true" /><span>工作台</span></a>
+        <a className="mobile-nav-item" href="#projects"><FolderKanban aria-hidden="true" /><span>项目</span></a>
+        <a className="mobile-nav-item" href="#system-status"><ListChecks aria-hidden="true" /><span>状态</span></a>
+      </nav>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setSubmitError(null); }}>
+        <DialogContent
+          className="project-dialog"
+          aria-describedby="project-dialog-description"
+          onCloseAutoFocus={(event) => {
+            if (!dialogReturnFocusRef.current) return;
+            event.preventDefault();
+            dialogReturnFocusRef.current.focus();
+          }}
+        >
+          <DialogHeader className="dialog-header">
+            <DialogTitle>创建数据项目</DialogTitle>
+            <DialogDescription id="project-dialog-description">选择数据文件和任务类型。下一步仅做本地结构与质量检查。</DialogDescription>
+          </DialogHeader>
+
+          <div className="dialog-body">
+            <div className="form-group">
+              <p className="field-label">数据文件 <span aria-hidden="true">*</span></p>
+              <button
+                type="button"
+                className="file-picker"
+                aria-describedby={`file-helper${fileIssue || submitError ? " file-error" : ""}`}
+                data-invalid={Boolean(fileIssue || submitError)}
+                onClick={() => inputRef.current?.click()}
+              >
+                <span className="file-picker-icon"><FileSpreadsheet aria-hidden="true" /></span>
+                {selectedFile ? (
+                  <span className="file-picker-copy"><strong>{selectedFile.name}</strong><small>{formatBytes(selectedFile.size)} · 点击可重新选择</small></span>
+                ) : (
+                  <span className="file-picker-copy"><strong>选择 CSV 或 XLSX 文件</strong><small>文件只会在本机读取</small></span>
+                )}
+                <span className="file-picker-action">浏览</span>
               </button>
-              {(fileIssue || submitError) && <p className="mt-2 text-sm text-destructive">{fileIssue || submitError}</p>}
+              <p id="file-helper" className="field-helper">CSV 最大 1 GB，XLSX 最大 200 MB。</p>
+              {(fileIssue || submitError) && <p id="file-error" className="field-error" role="alert">{fileIssue || submitError}</p>}
             </div>
 
-            <fieldset>
-              <legend className="mb-3 text-sm font-medium">任务类型</legend>
-              <div className="grid grid-cols-2 gap-2">
-                {taskTypes.map((type) => <button key={type} type="button" className={`task-option ${taskType === type ? "task-option-active" : ""}`} onClick={() => setTaskType(type)}>{type}</button>)}
+            <fieldset className="form-group">
+              <legend className="field-label">任务类型 <span aria-hidden="true">*</span></legend>
+              <div className="task-grid">
+                {taskTypes.map((type) => {
+                  const active = taskType === type.label;
+                  return (
+                    <label
+                      key={type.label}
+                      className={`task-option ${active ? "task-option-active" : ""}`}
+                    >
+                      <input
+                        className="sr-only"
+                        type="radio"
+                        name="task-type"
+                        value={type.code}
+                        checked={active}
+                        onChange={() => setTaskType(type.label)}
+                      />
+                      <span className="task-option-title">{active && <Check aria-hidden="true" />}{type.label}</span>
+                      <span>{type.description}</span>
+                    </label>
+                  );
+                })}
               </div>
             </fieldset>
           </div>
-          <div className="flex items-center justify-end gap-3 border-t border-border bg-secondary/30 px-6 py-4"><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>取消</Button><Button className="bg-[#0b1736] text-white hover:bg-[#142651]" disabled={!selectedFile || Boolean(fileIssue) || submitting} onClick={createProject}>{submitting && <LoaderCircle className="size-4 animate-spin" />}{submitting ? "正在检查" : "创建并检查"}</Button></div>
+
+          <div className="dialog-actions">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>取消</Button>
+            <Button
+              disabled={!selectedFile || Boolean(fileIssue) || submitting}
+              aria-busy={submitting}
+              onClick={createProject}
+            >
+              {submitting && <LoaderCircle className="animate-spin" aria-hidden="true" />}
+              {submitting ? "正在检查" : "创建并检查"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }

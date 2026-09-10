@@ -24,6 +24,24 @@ Better Data 是一个面向数据分析人员的 Windows 本地数据预处理�
 
 详细需求见 [产品需求规格](docs/requirements.md)，技术设计见 [系统架构](docs/architecture.md)，界面实现遵循 [设计系统](uidesign.md)。
 
+## 仓库导览
+
+第一次阅读代码时，可以先把仓库理解为四部分：
+
+```text
+app/ + components/   浏览器界面与通用组件
+backend/             本地数据 API 与处理逻辑
+docs/                需求、架构、路线图与开发说明
+.github/ + scripts/  自动测试、协作流程与工程脚本
+```
+
+完整的目录用途、数据流、根目录配置文件和“修改某项功能应从哪里开始”，请阅读 [仓库导览](docs/repository-guide.md)。复杂模块旁也提供了就近说明：
+
+- [前端 `app` 说明](app/README.md)
+- [后端 `backend` 说明](backend/README.md)
+- [通用组件说明](components/README.md)
+- [文档索引](docs/README.md)
+
 ## 技术方向
 
 - 前端：React、TypeScript、Tailwind CSS 与可访问组件库

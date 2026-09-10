@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from better_data import __version__
 from better_data.config import settings
@@ -13,6 +14,8 @@ from better_data.models import (
     ProjectAnalysis,
     PipelineRunRecord,
     PipelineRunRequest,
+    EvaluationRecord,
+    EvaluationRequest,
     ProjectLibraryInfo,
     ProjectLibraryUpdate,
     ProjectRecord,
@@ -132,6 +135,42 @@ def create_pipeline_run(
         raise HTTPException(status_code=404, detail="项目不存在") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/projects/{project_id}/evaluation", response_model=EvaluationRecord)
+def get_project_evaluation(project_id: str) -> EvaluationRecord:
+    try:
+        return store.get_evaluation(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="尚无评估与导出结果") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/projects/{project_id}/evaluation",
+    response_model=EvaluationRecord,
+    status_code=201,
+)
+def create_project_evaluation(
+    project_id: str, request: EvaluationRequest
+) -> EvaluationRecord:
+    try:
+        return store.create_evaluation(project_id, request.mode)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="请先完成预处理流水线") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/projects/{project_id}/artifacts/{artifact_name}")
+def download_project_artifact(project_id: str, artifact_name: str) -> FileResponse:
+    try:
+        path, filename = store.artifact_path(project_id, artifact_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="导出文件不存在") from exc
+    media_type = "text/html; charset=utf-8" if artifact_name == "report" else "text/csv; charset=utf-8"
+    return FileResponse(path, media_type=media_type, filename=filename)
 
 
 @app.get("/api/settings/project-library", response_model=ProjectLibraryInfo)

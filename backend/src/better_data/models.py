@@ -201,6 +201,43 @@ class PipelineRunRecord(BaseModel):
     artifacts: dict[str, PipelineArtifact]
 
 
+class EvaluationMode(StrEnum):
+    OFF = "off"
+    QUICK = "quick"
+
+
+class EvaluationRequest(BaseModel):
+    mode: EvaluationMode = EvaluationMode.QUICK
+
+
+class EvaluationScores(BaseModel):
+    name: str
+    metrics: dict[str, float]
+
+
+class ExportArtifact(BaseModel):
+    path: str
+    download_url: str
+    size: int = Field(ge=0)
+    sha256: str
+
+
+class EvaluationRecord(BaseModel):
+    schema_version: int = 1
+    project_id: str
+    source_sha256: str
+    created_at: datetime
+    mode: EvaluationMode
+    task_type: TaskType
+    random_seed: int
+    same_split: bool
+    train_rows: int
+    test_rows: int
+    baseline: EvaluationScores | None = None
+    complete: EvaluationScores | None = None
+    artifacts: dict[str, ExportArtifact]
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str

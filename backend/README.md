@@ -14,6 +14,7 @@ backend/
 │     ├─ project_store.py
 │     ├─ analysis.py
 │     ├─ pipeline.py
+│     ├─ evaluation.py
 │     └─ profiling.py
 ├─ tests/
 │  ├─ fixtures/
@@ -31,6 +32,7 @@ backend/
 | `services/profiling.py` | 使用 Polars/OpenPyXL 抽样读取 CSV/XLSX 并生成字段画像 |
 | `services/analysis.py` | 推断字段角色、计算六维质量评分、生成可追溯建议并标记冲突 |
 | `services/pipeline.py` | 先划分后拟合的分类/回归基础预处理、Parquet 工作文件和 JSON 学习状态 |
+| `services/evaluation.py` | 同划分快速基线比较、UTF-8 BOM CSV、离线 HTML 报告和文件哈希 |
 | `tests/` | 后端自动化测试；测试数据必须为合成数据或允许再分发的数据 |
 
 ## API
@@ -46,6 +48,9 @@ backend/
 | `PUT` | `/api/projects/{project_id}/recommendations` | 保存建议启停状态并阻止冲突组合 |
 | `POST` | `/api/projects/{project_id}/pipeline-runs` | 执行一次固定种子的安全预处理 |
 | `GET` | `/api/projects/{project_id}/pipeline-runs/latest` | 返回最近一次流水线配置、学习状态和内部文件摘要 |
+| `POST` | `/api/projects/{project_id}/evaluation` | 生成快速评估、CSV 和离线 HTML 报告 |
+| `GET` | `/api/projects/{project_id}/evaluation` | 返回最近一次评估与导出清单 |
+| `GET` | `/api/projects/{project_id}/artifacts/{artifact_name}` | 从固定白名单下载训练集、测试集或报告 |
 | `GET` | `/api/settings/project-library` | 返回项目库路径、可写状态、项目数和首次设置状态 |
 | `PUT` | `/api/settings/project-library` | 验证并保存新的项目库绝对路径 |
 | `GET` | `/api/docs` | FastAPI 自动生成的本地接口文档 |

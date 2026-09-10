@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   Save,
   ShieldCheck,
+  Play,
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
@@ -85,6 +86,18 @@ type Analysis = {
   fields_confirmed: boolean;
 };
 
+type PipelineRun = {
+  created_at: string;
+  train_rows: number;
+  test_rows: number;
+  target_missing_rows: number;
+  stratified: boolean;
+  output_feature_columns: string[];
+  applied_recommendation_ids: string[];
+  test_unknown_categories: Record<string, number>;
+  artifacts: Record<string, { path: string; row_count: number; column_count: number; sha256: string }>;
+};
+
 async function readJson(response: Response) {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.detail ?? "本地服务返回异常");
@@ -101,6 +114,21 @@ export default function ProjectAnalysisPage() {
   const [loading, setLoading] = useState(true);
   const [savingFields, setSavingFields] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
+  const [runningPipeline, setRunningPipeline] = useState(false);
+  const [pipelineRun, setPipelineRun] = useState<PipelineRun | null>(null);
+  const [fieldsDirty, setFieldsDirty] = useState(false);
+  const [rulesDirty, setRulesDirty] = useState(false);
+  const [pipelineConfig, setPipelineConfig] = useState({
+    test_size: 0.2,
+    random_seed: 42,
+    stratify_classification: true,
+    drop_duplicates: true,
+    drop_constant_features: true,
+    numeric_imputation: "median",
+    categorical_imputation: "most_frequent",
+    scaling: "standard",
+    max_categories: 50,
+  });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
 
@@ -110,10 +138,13 @@ export default function ProjectAnalysisPage() {
     Promise.all([
       fetch(`${API_BASE}/api/projects/${projectId}`, { signal: controller.signal }).then(readJson),
       fetch(`${API_BASE}/api/projects/${projectId}/analysis`, { signal: controller.signal }).then(readJson),
+      fetch(`${API_BASE}/api/projects/${projectId}/pipeline-runs/latest`, { signal: controller.signal })
+        .then((response) => response.status === 404 ? null : readJson(response)),
     ])
-      .then(([projectPayload, analysisPayload]: [Project, Analysis]) => {
+      .then(([projectPayload, analysisPayload, runPayload]: [Project, Analysis, PipelineRun | null]) => {
         setProject(projectPayload);
         applyAnalysis(analysisPayload);
+        setPipelineRun(runPayload);
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -138,6 +169,8 @@ export default function ProjectAnalysisPage() {
     setAnalysis(next);
     setRoles(Object.fromEntries(next.fields.map((field) => [field.name, field.role])));
     setEnabledIds(new Set(next.recommendations.filter((item) => item.enabled).map((item) => item.id)));
+    setFieldsDirty(false);
+    setRulesDirty(false);
   }
 
   async function saveFields() {
@@ -154,6 +187,7 @@ export default function ProjectAnalysisPage() {
       });
       const payload = await readJson(response) as Analysis;
       applyAnalysis(payload);
+      setPipelineRun(null);
       setNotice("字段角色已确认，质量评分和建议已按新配置重新计算。");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "字段配置保存失败");
@@ -174,11 +208,33 @@ export default function ProjectAnalysisPage() {
       });
       const payload = await readJson(response) as Analysis;
       applyAnalysis(payload);
+      setPipelineRun(null);
       setNotice("建议选择已保存。冲突检查通过，但尚未执行任何数据变换。");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "建议选择保存失败");
     } finally {
       setSavingRules(false);
+    }
+  }
+
+  async function runPipeline() {
+    if (!analysis || !analysis.fields_confirmed || fieldsDirty || rulesDirty) return;
+    setRunningPipeline(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/pipeline-runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: pipelineConfig }),
+      });
+      const payload = await readJson(response) as PipelineRun;
+      setPipelineRun(payload);
+      setProject((current) => current ? { ...current, status: "processed" } : current);
+      setNotice(`预处理完成：训练集 ${payload.train_rows} 行，测试集 ${payload.test_rows} 行。`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "预处理执行失败");
+    } finally {
+      setRunningPipeline(false);
     }
   }
 
@@ -275,7 +331,7 @@ export default function ProjectAnalysisPage() {
                     <td><code>{field.inferred_type}</code></td>
                     <td>
                       <label className="sr-only" htmlFor={`role-${field.name}`}>设置 {field.name} 的角色</label>
-                      <select id={`role-${field.name}`} value={roles[field.name]} onChange={(event) => setRoles((current) => ({ ...current, [field.name]: event.target.value }))}>
+                      <select id={`role-${field.name}`} value={roles[field.name]} onChange={(event) => { setRoles((current) => ({ ...current, [field.name]: event.target.value })); setFieldsDirty(true); }}>
                         {roleOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
                       </select>
                     </td>
@@ -302,7 +358,7 @@ export default function ProjectAnalysisPage() {
                   <article className="recommendation-card" key={item.id} data-enabled={checked}>
                     <div className="recommendation-heading">
                       <label className="recommendation-toggle">
-                        <input type="checkbox" checked={checked} onChange={(event) => setEnabledIds((current) => { const next = new Set(current); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; })} />
+                        <input type="checkbox" checked={checked} onChange={(event) => { setEnabledIds((current) => { const next = new Set(current); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; }); setRulesDirty(true); }} />
                         <span aria-hidden="true" />
                         <span className="sr-only">{checked ? "关闭" : "启用"}建议 {item.title}</span>
                       </label>
@@ -316,6 +372,34 @@ export default function ProjectAnalysisPage() {
               })}
             </div>
           ) : <div className="analysis-empty"><Sparkles aria-hidden="true" /><p>当前抽样和字段配置没有触发处理建议。</p></div>}
+        </section>
+
+        <section className="analysis-section" aria-labelledby="pipeline-title">
+          <div className="analysis-section-header action-header">
+            <div><p className="panel-kicker">训练集拟合边界</p><h2 id="pipeline-title">基础预处理流水线</h2><p>先划分，再仅用训练集学习填充值、类别词表、缩放参数和常量特征。</p></div>
+            <Button onClick={runPipeline} disabled={!analysis.fields_confirmed || Boolean(fieldValidation) || fieldsDirty || rulesDirty || runningPipeline} aria-busy={runningPipeline}>
+              {runningPipeline ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
+              {runningPipeline ? "正在处理" : pipelineRun ? "重新运行" : "运行预处理"}
+            </Button>
+          </div>
+          <div className="leakage-note"><ShieldCheck aria-hidden="true" /><div><strong>防泄漏保证</strong><p>测试集不参与统计参数学习；新类别进入独立 unknown 特征；目标缺失行单独保存。</p></div></div>
+          {(fieldsDirty || rulesDirty || !analysis.fields_confirmed) && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />{!analysis.fields_confirmed ? "请先保存并确认字段角色。" : "字段或建议有未保存更改，请保存后再运行。"}</p>}
+          <div className="pipeline-config-grid">
+            <label><span>测试集比例</span><select value={pipelineConfig.test_size} onChange={(event) => setPipelineConfig((current) => ({ ...current, test_size: Number(event.target.value) }))}><option value={0.2}>20%（推荐）</option><option value={0.25}>25%</option><option value={0.3}>30%</option></select></label>
+            <label><span>随机种子</span><input type="number" min={0} max={2147483647} value={pipelineConfig.random_seed} onChange={(event) => setPipelineConfig((current) => ({ ...current, random_seed: Number(event.target.value) }))} /></label>
+            <label><span>数值缺失</span><select value={pipelineConfig.numeric_imputation} onChange={(event) => setPipelineConfig((current) => ({ ...current, numeric_imputation: event.target.value }))}><option value="median">中位数（推荐）</option><option value="mean">均值</option></select></label>
+            <label><span>类别缺失</span><select value={pipelineConfig.categorical_imputation} onChange={(event) => setPipelineConfig((current) => ({ ...current, categorical_imputation: event.target.value }))}><option value="most_frequent">训练集众数</option><option value="missing_category">独立缺失类别</option></select></label>
+            <label><span>数值缩放</span><select value={pipelineConfig.scaling} onChange={(event) => setPipelineConfig((current) => ({ ...current, scaling: event.target.value }))}><option value="standard">标准化</option><option value="minmax">Min-Max</option><option value="none">不缩放</option></select></label>
+            <label><span>类别维度上限</span><input type="number" min={2} max={500} value={pipelineConfig.max_categories} onChange={(event) => setPipelineConfig((current) => ({ ...current, max_categories: Number(event.target.value) }))} /></label>
+          </div>
+          <fieldset className="pipeline-checks"><legend>结构处理</legend><label><input type="checkbox" checked={pipelineConfig.drop_duplicates} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_duplicates: event.target.checked }))} />移除完全重复行</label><label><input type="checkbox" checked={pipelineConfig.drop_constant_features} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_constant_features: event.target.checked }))} />按训练集移除常量特征</label>{supervised && project.task_type === "classification" && <label><input type="checkbox" checked={pipelineConfig.stratify_classification} onChange={(event) => setPipelineConfig((current) => ({ ...current, stratify_classification: event.target.checked }))} />分类任务使用分层划分</label>}</fieldset>
+          {pipelineRun && (
+            <div className="pipeline-result" aria-live="polite">
+              <div><Check aria-hidden="true" /><div><strong>最近一次预处理已完成</strong><p>训练集 {pipelineRun.train_rows} 行 · 测试集 {pipelineRun.test_rows} 行 · 输出 {pipelineRun.output_feature_columns.length} 个特征</p></div></div>
+              <dl><div><dt>划分方式</dt><dd>{pipelineRun.stratified ? "固定种子分层" : "固定种子随机"}</dd></div><div><dt>缺失目标</dt><dd>{pipelineRun.target_missing_rows} 行</dd></div><div><dt>应用建议</dt><dd>{pipelineRun.applied_recommendation_ids.length} 条</dd></div><div><dt>内部文件</dt><dd>train.parquet / test.parquet</dd></div></dl>
+              <p>评估、CSV 和 HTML 报告将在结果阶段生成；当前文件保存在项目 working 目录。</p>
+            </div>
+          )}
         </section>
       </main>
     </div>

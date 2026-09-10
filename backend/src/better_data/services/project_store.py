@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -71,8 +72,8 @@ class ProjectStore:
             self._write_record(project_root, record)
             return record
         except Exception:
-            if destination.exists():
-                destination.unlink()
+            if project_root.exists() and not (project_root / "project.json").exists():
+                shutil.rmtree(project_root)
             raise
         finally:
             await upload.close()

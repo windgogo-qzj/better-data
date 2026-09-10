@@ -114,6 +114,8 @@ def test_pipeline_fits_on_train_only_maps_unknown_and_separates_missing_target(
     test_frame = pl.read_parquet(working / "test.parquet")
     assert test_frame.get_column("segment__unknown").to_list() == [1, 1, 1, 1]
     assert pl.read_parquet(working / "target-missing.parquet").height == 1
+    assert pl.read_parquet(working / "train-raw.parquet").height == 16
+    assert pl.read_parquet(working / "test-raw.parquet").height == 4
     state = json.loads((working / "pipeline-state.json").read_text(encoding="utf-8"))
     assert state["source_sha256"] == project["source_sha256"]
     assert client.get(f"/api/projects/{project['id']}").json()["status"] == "processed"

@@ -174,15 +174,21 @@ def run_preprocessing_pipeline(
     working_dir.mkdir(parents=True, exist_ok=True)
     train_path = working_dir / "train.parquet"
     test_path = working_dir / "test.parquet"
+    raw_train_path = working_dir / "train-raw.parquet"
+    raw_test_path = working_dir / "test-raw.parquet"
     target_missing_path = working_dir / "target-missing.parquet"
     state_path = working_dir / "pipeline-state.json"
     _write_parquet_atomic(train_path, train_result)
     _write_parquet_atomic(test_path, test_result)
+    _write_parquet_atomic(raw_train_path, train_raw)
+    _write_parquet_atomic(raw_test_path, test_raw)
     _write_parquet_atomic(target_missing_path, target_missing)
 
     artifacts = {
         "train": _artifact(working_dir, train_path, train_result),
         "test": _artifact(working_dir, test_path, test_result),
+        "raw_train": _artifact(working_dir, raw_train_path, train_raw),
+        "raw_test": _artifact(working_dir, raw_test_path, test_raw),
         "target_missing": _artifact(working_dir, target_missing_path, target_missing),
     }
     record = PipelineRunRecord(

@@ -263,6 +263,8 @@ class ProjectStore:
             project_root / "working" / "pipeline-state.json",
             project_root / "working" / "train.parquet",
             project_root / "working" / "test.parquet",
+            project_root / "working" / "train-raw.parquet",
+            project_root / "working" / "test-raw.parquet",
             project_root / "working" / "target-missing.parquet",
         ):
             path.unlink(missing_ok=True)

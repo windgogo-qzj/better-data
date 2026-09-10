@@ -67,7 +67,7 @@ work/projects/<project-id>/
 └─ logs/         # 操作与错误记录
 ```
 
-流水线成功后，`working/` 包含 `train.parquet`、`test.parquet`、`target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
+流水线成功后，`working/` 包含处理后的 `train.parquet`、`test.parquet`，同一划分的 `train-raw.parquet`、`test-raw.parquet`，以及 `target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
 
 `work/` 包含用户数据，已被 Git 忽略。不要把其中内容复制进测试、Issue 或 Pull Request。
 

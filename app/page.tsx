@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import Link from "next/link";
 import {
   Activity,
   Check,
@@ -475,7 +476,7 @@ export default function HomePage() {
                       <li key={project.id} className="project-row">
                         <span className="project-icon"><FileSpreadsheet aria-hidden="true" /></span>
                         <div className="project-main">
-                          <h3>{project.name}</h3>
+                          <h3><Link href={`/projects/${project.id}`}>{project.name}</Link></h3>
                           <p>{project.source_filename}<span aria-hidden="true"> · </span>{formatBytes(project.source_size)}</p>
                         </div>
                         {project.profile && <span className="project-meta">{project.profile.column_count} 列 · 抽样 {project.profile.sampled_rows} 行</span>}

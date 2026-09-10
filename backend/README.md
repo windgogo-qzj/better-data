@@ -12,6 +12,7 @@ backend/
 │  ├─ models.py
 │  └─ services/
 │     ├─ project_store.py
+│     ├─ analysis.py
 │     └─ profiling.py
 ├─ tests/
 │  ├─ fixtures/
@@ -27,6 +28,7 @@ backend/
 | `models.py` | Pydantic 请求/响应结构、任务类型和项目状态 |
 | `services/project_store.py` | 安全保存上传文件、项目目录、SHA-256 和 `project.json` |
 | `services/profiling.py` | 使用 Polars/OpenPyXL 抽样读取 CSV/XLSX 并生成字段画像 |
+| `services/analysis.py` | 推断字段角色、计算六维质量评分、生成可追溯建议并标记冲突 |
 | `tests/` | 后端自动化测试；测试数据必须为合成数据或允许再分发的数据 |
 
 ## API
@@ -37,6 +39,9 @@ backend/
 | `GET` | `/api/projects` | 返回本机项目列表 |
 | `GET` | `/api/projects/{project_id}` | 返回单个项目详情 |
 | `POST` | `/api/projects` | 接收任务类型和数据文件，创建项目并执行初始画像 |
+| `GET` | `/api/projects/{project_id}/analysis` | 返回字段角色、质量评分、证据和处理建议 |
+| `PUT` | `/api/projects/{project_id}/fields` | 保存完整字段角色并重新计算分析 |
+| `PUT` | `/api/projects/{project_id}/recommendations` | 保存建议启停状态并阻止冲突组合 |
 | `GET` | `/api/settings/project-library` | 返回项目库路径、可写状态、项目数和首次设置状态 |
 | `PUT` | `/api/settings/project-library` | 验证并保存新的项目库绝对路径 |
 | `GET` | `/api/docs` | FastAPI 自动生成的本地接口文档 |
@@ -48,6 +53,7 @@ backend/
 ```text
 work/projects/<project-id>/
 ├─ project.json
+├─ analysis.json  # 版本化字段、评分与规则建议
 ├─ source/       # 原始上传文件
 ├─ working/      # 中间工作数据
 ├─ results/      # 处理结果

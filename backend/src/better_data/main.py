@@ -9,12 +9,16 @@ from better_data import __version__
 from better_data.config import settings
 from better_data.models import (
     HealthResponse,
+    FieldConfigurationUpdate,
+    ProjectAnalysis,
     ProjectLibraryInfo,
     ProjectLibraryUpdate,
     ProjectRecord,
+    RecommendationSelectionUpdate,
     TaskType,
 )
 from better_data.services.project_store import ProjectStore
+from better_data.services.analysis import RecommendationConflictError
 
 store = ProjectStore(settings)
 
@@ -59,6 +63,44 @@ def get_project(project_id: str) -> ProjectRecord:
         raise HTTPException(status_code=404, detail="项目不存在") from exc
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/projects/{project_id}/analysis", response_model=ProjectAnalysis)
+def get_project_analysis(project_id: str) -> ProjectAnalysis:
+    try:
+        return store.get_analysis(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/projects/{project_id}/fields", response_model=ProjectAnalysis)
+def update_project_fields(
+    project_id: str, update: FieldConfigurationUpdate
+) -> ProjectAnalysis:
+    try:
+        return store.update_fields(project_id, update)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    except RecommendationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/projects/{project_id}/recommendations", response_model=ProjectAnalysis)
+def update_project_recommendations(
+    project_id: str, update: RecommendationSelectionUpdate
+) -> ProjectAnalysis:
+    try:
+        return store.update_recommendations(project_id, update)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    except RecommendationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/settings/project-library", response_model=ProjectLibraryInfo)

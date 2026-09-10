@@ -13,6 +13,7 @@ backend/
 │  └─ services/
 │     ├─ project_store.py
 │     ├─ analysis.py
+│     ├─ pipeline.py
 │     └─ profiling.py
 ├─ tests/
 │  ├─ fixtures/
@@ -29,6 +30,7 @@ backend/
 | `services/project_store.py` | 安全保存上传文件、项目目录、SHA-256 和 `project.json` |
 | `services/profiling.py` | 使用 Polars/OpenPyXL 抽样读取 CSV/XLSX 并生成字段画像 |
 | `services/analysis.py` | 推断字段角色、计算六维质量评分、生成可追溯建议并标记冲突 |
+| `services/pipeline.py` | 先划分后拟合的分类/回归基础预处理、Parquet 工作文件和 JSON 学习状态 |
 | `tests/` | 后端自动化测试；测试数据必须为合成数据或允许再分发的数据 |
 
 ## API
@@ -42,6 +44,8 @@ backend/
 | `GET` | `/api/projects/{project_id}/analysis` | 返回字段角色、质量评分、证据和处理建议 |
 | `PUT` | `/api/projects/{project_id}/fields` | 保存完整字段角色并重新计算分析 |
 | `PUT` | `/api/projects/{project_id}/recommendations` | 保存建议启停状态并阻止冲突组合 |
+| `POST` | `/api/projects/{project_id}/pipeline-runs` | 执行一次固定种子的安全预处理 |
+| `GET` | `/api/projects/{project_id}/pipeline-runs/latest` | 返回最近一次流水线配置、学习状态和内部文件摘要 |
 | `GET` | `/api/settings/project-library` | 返回项目库路径、可写状态、项目数和首次设置状态 |
 | `PUT` | `/api/settings/project-library` | 验证并保存新的项目库绝对路径 |
 | `GET` | `/api/docs` | FastAPI 自动生成的本地接口文档 |
@@ -54,6 +58,7 @@ backend/
 work/projects/<project-id>/
 ├─ project.json
 ├─ analysis.json  # 版本化字段、评分与规则建议
+├─ pipeline-config.json # 最近一次确认的流水线配置
 ├─ source/       # 原始上传文件
 ├─ working/      # 中间工作数据
 ├─ results/      # 处理结果
@@ -61,6 +66,8 @@ work/projects/<project-id>/
 ├─ exports/      # 导出包
 └─ logs/         # 操作与错误记录
 ```
+
+流水线成功后，`working/` 包含 `train.parquet`、`test.parquet`、`target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
 
 `work/` 包含用户数据，已被 Git 忽略。不要把其中内容复制进测试、Issue 或 Pull Request。
 

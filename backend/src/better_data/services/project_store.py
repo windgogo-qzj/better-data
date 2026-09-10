@@ -19,6 +19,8 @@ from better_data.models import (
     ProjectRecord,
     ProjectStatus,
     RecommendationSelectionUpdate,
+    PipelineConfig,
+    PipelineRunRecord,
     TaskType,
 )
 from better_data.services.analysis import (
@@ -27,6 +29,7 @@ from better_data.services.analysis import (
     validate_enabled_recommendations,
 )
 from better_data.services.profiling import profile_dataset
+from better_data.services.pipeline import run_preprocessing_pipeline
 
 
 class ProjectStore:
@@ -151,7 +154,7 @@ class ProjectStore:
 
     def get_analysis(self, project_id: str) -> ProjectAnalysis:
         project = self.get(project_id)
-        if project.status != ProjectStatus.READY or project.profile is None:
+        if project.status not in {ProjectStatus.READY, ProjectStatus.PROCESSED} or project.profile is None:
             raise ValueError("项目尚未完成数据画像，无法确认字段")
         project_root = self._project_root(project_id)
         analysis_file = project_root / "analysis.json"
@@ -204,6 +207,7 @@ class ProjectStore:
             {item.id for item in analysis.recommendations if item.enabled},
         )
         self._write_analysis(self._project_root(project_id), analysis)
+        self._invalidate_pipeline(project_id)
         return analysis
 
     def update_recommendations(
@@ -217,7 +221,55 @@ class ProjectStore:
         for recommendation in analysis.recommendations:
             recommendation.enabled = recommendation.id in enabled_ids
         self._write_analysis(self._project_root(project_id), analysis)
+        self._invalidate_pipeline(project_id)
         return analysis
+
+    def run_pipeline(self, project_id: str, config: PipelineConfig) -> PipelineRunRecord:
+        project = self.get(project_id)
+        analysis = self.get_analysis(project_id)
+        project_root = self._project_root(project_id)
+        source_path = project_root / "source" / project.source_filename
+        if not source_path.is_file():
+            raise ValueError("项目原始文件不存在")
+        result = run_preprocessing_pipeline(
+            project,
+            analysis,
+            source_path,
+            project_root / "working",
+            config,
+        )
+        self._write_json_atomic(
+            project_root / "pipeline-config.json", config.model_dump(mode="json")
+        )
+        project.status = ProjectStatus.PROCESSED
+        project.error = None
+        self._write_record(project_root, project)
+        return result
+
+    def get_pipeline_run(self, project_id: str) -> PipelineRunRecord:
+        self.get(project_id)
+        state_file = self._project_root(project_id) / "working" / "pipeline-state.json"
+        if not state_file.is_file():
+            raise KeyError("pipeline-run")
+        try:
+            return PipelineRunRecord.model_validate_json(state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("流水线运行记录损坏，无法读取") from exc
+
+    def _invalidate_pipeline(self, project_id: str) -> None:
+        project_root = self._project_root(project_id)
+        for path in (
+            project_root / "pipeline-config.json",
+            project_root / "working" / "pipeline-state.json",
+            project_root / "working" / "train.parquet",
+            project_root / "working" / "test.parquet",
+            project_root / "working" / "target-missing.parquet",
+        ):
+            path.unlink(missing_ok=True)
+        project = self.get(project_id)
+        if project.status == ProjectStatus.PROCESSED:
+            project.status = ProjectStatus.READY
+            self._write_record(project_root, project)
 
     def _project_root(self, project_id: str) -> Path:
         if not re.fullmatch(r"[0-9a-f]{32}", project_id):

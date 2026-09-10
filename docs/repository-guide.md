@@ -60,7 +60,8 @@ flowchart LR
 
 | 文件 | 用途 |
 | --- | --- |
-| `page.tsx` | 当前首页工作台；加载项目列表、打开创建项目对话框、上传文件并展示状态 |
+| `page.tsx` | 首页工作台；加载项目列表、打开创建项目对话框、上传文件并展示状态 |
+| `projects/[projectId]/page.tsx` | 项目分析页；确认字段角色、查看六维质量评分和启停规则建议 |
 | `layout.tsx` | HTML 根结构、中文语言标记、页面标题和 favicon |
 | `globals.css` | 设计 Token、全局样式、组件状态、响应式布局和减少动效规则 |
 | `chatgpt-auth.ts` | 脚手架保留的 ChatGPT 认证辅助函数；当前产品不涉及登录，未进入主流程 |
@@ -77,6 +78,7 @@ backend/
 │  ├─ models.py            # API 数据结构和状态枚举
 │  └─ services/
 │     ├─ project_store.py  # 项目创建、文件保存、元数据管理
+│     ├─ analysis.py       # 字段推断、六维评分、规则建议与冲突判断
 │     └─ profiling.py      # CSV/XLSX 读取与数据画像
 ├─ tests/                  # 自动化测试和合成测试数据
 └─ pyproject.toml          # Python 包、依赖与测试配置
@@ -128,20 +130,23 @@ backend/
 3. `backend/src/better_data/main.py` 校验接口参数并调用 `ProjectStore`。
 4. `project_store.py` 创建项目目录、流式保存原始文件、计算 SHA-256，并阻止路径逃逸。
 5. `profiling.py` 抽样读取表格，生成字段类型、缺失率、唯一值和示例等画像。
-6. `models.py` 定义的 `ProjectRecord` 被写入 `project.json` 并返回前端。
-7. 前端更新项目数量、存储占用、状态和最近项目列表。
+6. `analysis.py` 根据画像生成字段角色、六维评分、证据和带稳定编号的处理建议。
+7. `ProjectRecord` 写入 `project.json`，字段与规则分析写入 `analysis.json`。
+8. 前端更新项目列表，并允许进入项目分析页继续确认。
 
 ## 6. 想修改某项功能时从哪里开始
 
 | 目标 | 首先查看 | 通常还会涉及 |
 | --- | --- | --- |
 | 修改首页布局或文案 | `app/page.tsx` | `app/globals.css`、`uidesign.md` |
+| 修改字段质量工作台 | `app/projects/[projectId]/page.tsx` | `services/analysis.py`、`models.py`、`app/globals.css` |
 | 修改颜色、间距或组件状态 | `uidesign.md` | `app/globals.css`、`components/ui/` |
 | 新增通用按钮或表单组件 | `components/ui/` | `components/README.md` |
 | 新增 API | `backend/src/better_data/main.py` | `models.py`、`services/`、`tests/` |
 | 修改文件大小或项目库路径 | `backend/src/better_data/config.py` | README、测试 |
 | 修改 CSV/XLSX 数据画像 | `services/profiling.py` | `models.py`、测试数据、测试 |
 | 修改项目目录与元数据 | `services/project_store.py` | `config.py`、`models.py`、测试 |
+| 修改字段推断、评分或建议规则 | `services/analysis.py` | `models.py`、项目分析 API 测试、需求阈值 |
 | 调整 CI | `.github/workflows/ci.yml` | `package.json`、`pyproject.toml` |
 | 记录架构取舍 | `docs/decisions/` | `docs/architecture.md` |
 | 启用可选 D1 数据库 | `db/`、`drizzle.config.ts` | `.openai/hosting.json`、迁移、测试 |

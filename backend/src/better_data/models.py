@@ -17,6 +17,8 @@ class ProjectStatus(StrEnum):
     UPLOADED = "uploaded"
     PROFILING = "profiling"
     READY = "ready"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
     FAILED = "failed"
 
 
@@ -138,6 +140,65 @@ class ProjectAnalysis(BaseModel):
     quality: QualityReport
     recommendations: list[RuleRecommendation]
     fields_confirmed: bool = False
+
+
+class NumericImputation(StrEnum):
+    MEAN = "mean"
+    MEDIAN = "median"
+
+
+class CategoricalImputation(StrEnum):
+    MOST_FREQUENT = "most_frequent"
+    MISSING_CATEGORY = "missing_category"
+
+
+class ScalingStrategy(StrEnum):
+    NONE = "none"
+    STANDARD = "standard"
+    MINMAX = "minmax"
+
+
+class PipelineConfig(BaseModel):
+    schema_version: int = 1
+    test_size: float = Field(default=0.2, ge=0.1, le=0.5)
+    random_seed: int = Field(default=42, ge=0, le=2_147_483_647)
+    stratify_classification: bool = True
+    drop_duplicates: bool = True
+    drop_constant_features: bool = True
+    numeric_imputation: NumericImputation = NumericImputation.MEDIAN
+    categorical_imputation: CategoricalImputation = CategoricalImputation.MOST_FREQUENT
+    scaling: ScalingStrategy = ScalingStrategy.STANDARD
+    max_categories: int = Field(default=50, ge=2, le=500)
+
+
+class PipelineRunRequest(BaseModel):
+    config: PipelineConfig = Field(default_factory=PipelineConfig)
+
+
+class PipelineArtifact(BaseModel):
+    path: str
+    row_count: int = Field(ge=0)
+    column_count: int = Field(ge=0)
+    sha256: str
+
+
+class PipelineRunRecord(BaseModel):
+    schema_version: int = 1
+    project_id: str
+    source_sha256: str
+    created_at: datetime
+    config: PipelineConfig
+    target_column: str
+    feature_columns: list[str]
+    output_feature_columns: list[str]
+    applied_recommendation_ids: list[str]
+    train_rows: int
+    test_rows: int
+    target_missing_rows: int
+    stratified: bool
+    learned_parameters: dict[str, dict[str, object]]
+    test_unknown_categories: dict[str, int]
+    artifacts: dict[str, PipelineArtifact]
 
 
 class HealthResponse(BaseModel):

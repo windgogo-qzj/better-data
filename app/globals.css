@@ -1588,6 +1588,204 @@ a[href] {
   }
 }
 
+.leakage-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: var(--space-4) var(--space-4) 0;
+  border: 1px solid color-mix(in srgb, var(--success) 24%, white);
+  border-radius: var(--radius-lg);
+  background: var(--success-soft);
+  padding: var(--space-3);
+  color: var(--success);
+}
+
+.leakage-note > svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  margin-top: 0.125rem;
+}
+
+.leakage-note strong {
+  font-size: 0.8125rem;
+}
+
+.leakage-note p {
+  margin: var(--space-1) 0 0;
+  font-size: 0.75rem;
+}
+
+.pipeline-blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-4) 0;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  padding: var(--space-2) var(--space-3);
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.pipeline-blocker svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.pipeline-config-grid {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.pipeline-config-grid label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.pipeline-config-grid select,
+.pipeline-config-grid input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding-inline: var(--space-3);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 400;
+}
+
+.pipeline-checks {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+}
+
+.pipeline-checks legend {
+  padding-top: var(--space-4);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.pipeline-checks label {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.pipeline-checks input {
+  width: 1.125rem;
+  height: 1.125rem;
+  accent-color: var(--primary);
+}
+
+.pipeline-result {
+  margin: 0 var(--space-4) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--success) 25%, white);
+  border-radius: var(--radius-lg);
+  background: var(--success-soft);
+  padding: var(--space-4);
+}
+
+.pipeline-result > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--success);
+}
+
+.pipeline-result > div:first-child > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+}
+
+.pipeline-result strong {
+  font-size: 0.875rem;
+}
+
+.pipeline-result p {
+  margin: var(--space-1) 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.pipeline-result dl {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.pipeline-result dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--success) 18%, white);
+  padding-top: var(--space-2);
+  font-size: 0.75rem;
+}
+
+.pipeline-result dt {
+  color: var(--muted-foreground);
+}
+
+.pipeline-result dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+@media (min-width: 40rem) {
+  .leakage-note,
+  .pipeline-blocker {
+    margin-inline: var(--space-6);
+  }
+
+  .pipeline-config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: var(--space-6);
+  }
+
+  .pipeline-checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: var(--space-6);
+  }
+
+  .pipeline-checks legend {
+    padding-top: var(--space-6);
+  }
+
+  .pipeline-result {
+    margin: 0 var(--space-6) var(--space-6);
+    padding: var(--space-6);
+  }
+
+  .pipeline-result dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .pipeline-config-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (min-width: 80rem) {
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 21rem;

@@ -11,6 +11,8 @@ from better_data.models import (
     HealthResponse,
     FieldConfigurationUpdate,
     ProjectAnalysis,
+    PipelineRunRecord,
+    PipelineRunRequest,
     ProjectLibraryInfo,
     ProjectLibraryUpdate,
     ProjectRecord,
@@ -99,6 +101,35 @@ def update_project_recommendations(
         raise HTTPException(status_code=404, detail="项目不存在") from exc
     except RecommendationConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/projects/{project_id}/pipeline-runs/latest",
+    response_model=PipelineRunRecord,
+)
+def get_latest_pipeline_run(project_id: str) -> PipelineRunRecord:
+    try:
+        return store.get_pipeline_run(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="尚无流水线运行记录") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/projects/{project_id}/pipeline-runs",
+    response_model=PipelineRunRecord,
+    status_code=201,
+)
+def create_pipeline_run(
+    project_id: str, request: PipelineRunRequest
+) -> PipelineRunRecord:
+    try:
+        return store.run_pipeline(project_id, request.config)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

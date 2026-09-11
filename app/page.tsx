@@ -89,7 +89,7 @@ function formatBytes(size: number) {
 function projectStatus(status: string) {
   if (status === "ready") return { label: "待确认", className: "status-warning" };
   if (["processing", "running"].includes(status)) return { label: "处理中", className: "status-info" };
-  if (["complete", "completed"].includes(status)) return { label: "已完成", className: "status-success" };
+  if (["complete", "completed", "processed"].includes(status)) return { label: "已处理", className: "status-success" };
   if (status === "failed") return { label: "失败", className: "status-error" };
   return { label: status, className: "status-neutral" };
 }

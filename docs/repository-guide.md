@@ -79,6 +79,7 @@ backend/
 │  └─ services/
 │     ├─ project_store.py  # 项目创建、文件保存、元数据管理
 │     ├─ analysis.py       # 字段推断、六维评分、规则建议与冲突判断
+│     ├─ pipeline.py       # 训练测试划分、训练集拟合和工作数据生成
 │     └─ profiling.py      # CSV/XLSX 读取与数据画像
 ├─ tests/                  # 自动化测试和合成测试数据
 └─ pyproject.toml          # Python 包、依赖与测试配置
@@ -147,6 +148,7 @@ backend/
 | 修改 CSV/XLSX 数据画像 | `services/profiling.py` | `models.py`、测试数据、测试 |
 | 修改项目目录与元数据 | `services/project_store.py` | `config.py`、`models.py`、测试 |
 | 修改字段推断、评分或建议规则 | `services/analysis.py` | `models.py`、项目分析 API 测试、需求阈值 |
+| 修改划分、填充、编码或缩放 | `services/pipeline.py` | `models.py`、防泄漏测试、项目分析页 |
 | 调整 CI | `.github/workflows/ci.yml` | `package.json`、`pyproject.toml` |
 | 记录架构取舍 | `docs/decisions/` | `docs/architecture.md` |
 | 启用可选 D1 数据库 | `db/`、`drizzle.config.ts` | `.openai/hosting.json`、迁移、测试 |

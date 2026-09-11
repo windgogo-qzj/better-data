@@ -195,11 +195,12 @@ GitHub Actions 在 Windows 环境重新执行前端构建和后端测试，两�
 | 项目 | 内容 |
 | --- | --- |
 | GitHub Issue | [#2 实现分类与回归安全预处理流水线](https://github.com/windgogo-qzj/better-data/issues/2) |
+| Pull Request | [#14 实现分类与回归安全预处理流水线](https://github.com/windgogo-qzj/better-data/pull/14) |
 | 分支 | `feat/2-safe-preprocessing` |
 | 后端提交 | `6a12744 feat: 实现防泄漏预处理流水线` |
 | 前端提交 | `45d76be feat: 接入安全预处理配置与执行` |
 | 支撑提交 | `b454b72 feat: 持久化可复用的原始数据划分` |
-| 当前阶段 | 本地实现与测试完成，等待远端 PR 与 CI |
+| 当前阶段 | PR #14 已通过 GitHub Actions 并合并，Issue #2 已关闭 |
 
 ### 开发前审计
 
@@ -263,9 +264,9 @@ GitHub Actions 在 Windows 环境重新执行前端构建和后端测试，两�
 | --- | --- |
 | GitHub Issue | [#3 实现快速评估、HTML 报告和基础导出](https://github.com/windgogo-qzj/better-data/issues/3) |
 | 分支 | `feat/3-quick-evaluation-export`（开发时堆叠在 #2 分支之上） |
-| 后端提交 | `29f9fbd feat: 实现快速评估与安全导出` |
-| 前端提交 | `69e07fd feat: 新增评估对比与结果下载界面` |
-| 当前阶段 | 本地实现与测试完成；等待 #2 发布后重放到 main 并创建 PR |
+| 后端提交 | `c7f7fb7 feat: 实现快速评估与安全导出` |
+| 前端提交 | `2e083db feat: 新增评估对比与结果下载界面` |
+| 当前阶段 | 已重放到合并 #2 后的 main，本地验证完成，等待远端 PR 与 CI |
 
 ### 开发前审计
 

@@ -480,10 +480,10 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 | 项目 | 内容 |
 | --- | --- |
 | GitHub Issue | [#22 重构首页、工作台与项目生命周期](https://github.com/windgogo-qzj/better-data/issues/22) |
-| Pull Request | 待创建 |
+| Pull Request | [#23 重构首页、工作台与项目生命周期](https://github.com/windgogo-qzj/better-data/pull/23) |
 | 分支 | `codex/ui-lifecycle-redesign` |
 | 核心提交 | `efcf619 feat: 重构界面并补齐项目回收站` |
-| 当前阶段 | 本地实现与回归验证完成，准备提交 Pull Request |
+| 当前阶段 | PR #23 已创建，等待 GitHub Actions 远端验收 |
 
 ### 问题复核
 

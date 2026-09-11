@@ -1818,6 +1818,10 @@ a[href] {
   box-shadow: inset 0 0 0 1px var(--primary);
 }
 
+.evaluation-mode label:only-of-type {
+  grid-column: 1 / -1;
+}
+
 .evaluation-mode input {
   width: 1.125rem;
   height: 1.125rem;

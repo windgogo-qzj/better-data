@@ -92,6 +92,7 @@ type PipelineRun = {
   created_at: string;
   train_rows: number;
   test_rows: number;
+  full_rows: number;
   target_missing_rows: number;
   stratified: boolean;
   output_feature_columns: string[];
@@ -106,6 +107,7 @@ type Evaluation = {
   random_seed: number;
   train_rows: number;
   test_rows: number;
+  full_rows: number;
   baseline: { name: string; metrics: Record<string, number> } | null;
   complete: { name: string; metrics: Record<string, number> } | null;
   artifacts: Record<string, { path: string; download_url: string; size: number; sha256: string }>;
@@ -161,6 +163,7 @@ export default function ProjectAnalysisPage() {
     ])
       .then(([projectPayload, analysisPayload, runPayload, evaluationPayload]: [Project, Analysis, PipelineRun | null, Evaluation | null]) => {
         setProject(projectPayload);
+        if (projectPayload.task_type === "cleaning") setEvaluationMode("off");
         applyAnalysis(analysisPayload);
         setPipelineRun(runPayload);
         setEvaluation(evaluationPayload);
@@ -178,6 +181,8 @@ export default function ProjectAnalysisPage() {
     [roles],
   );
   const supervised = project?.task_type === "classification" || project?.task_type === "regression";
+  const cleaning = project?.task_type === "cleaning";
+  const clusteringPreview = project?.task_type === "clustering_prep";
   const fieldValidation = supervised && targetCount !== 1
     ? `当前有 ${targetCount} 个目标列，分类和回归必须且只能选择 1 个。`
     : !supervised && targetCount > 0
@@ -418,27 +423,28 @@ export default function ProjectAnalysisPage() {
 
         <section className="analysis-section" aria-labelledby="pipeline-title">
           <div className="analysis-section-header action-header">
-            <div><p className="panel-kicker">训练集拟合边界</p><h2 id="pipeline-title">基础预处理流水线</h2><p>先划分，再仅用训练集学习填充值、类别词表、缩放参数和常量特征。</p></div>
-            <Button onClick={runPipeline} disabled={!analysis.fields_confirmed || Boolean(fieldValidation) || fieldsDirty || rulesDirty || runningPipeline} aria-busy={runningPipeline}>
+            <div><p className="panel-kicker">{cleaning ? "完整数据处理" : "训练集拟合边界"}</p><h2 id="pipeline-title">基础预处理流水线</h2><p>{cleaning ? "不划分数据，使用完整数据完成基础清洗、类别处理与缩放。" : clusteringPreview ? "聚类预处理执行与诊断将在 Beta 阶段提供。" : "先划分，再仅用训练集学习填充值、类别词表、缩放参数和常量特征。"}</p></div>
+            <Button onClick={runPipeline} disabled={clusteringPreview || !analysis.fields_confirmed || Boolean(fieldValidation) || fieldsDirty || rulesDirty || runningPipeline} aria-busy={runningPipeline}>
               {runningPipeline ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
               {runningPipeline ? "正在处理" : pipelineRun ? "重新运行" : "运行预处理"}
             </Button>
           </div>
-          <div className="leakage-note"><ShieldCheck aria-hidden="true" /><div><strong>防泄漏保证</strong><p>测试集不参与统计参数学习；新类别进入独立 unknown 特征；目标缺失行单独保存。</p></div></div>
+          <div className="leakage-note"><ShieldCheck aria-hidden="true" /><div><strong>{cleaning ? "原始数据保护" : "防泄漏保证"}</strong><p>{cleaning ? "不修改 source 原始文件；完整数据的清洗状态和结果写入独立工作文件。" : "测试集不参与统计参数学习；新类别进入独立 unknown 特征；目标缺失行单独保存。"}</p></div></div>
+          {clusteringPreview && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />聚类模式当前可完成画像、字段确认和建议审阅，执行与评估属于 Beta。</p>}
           {(fieldsDirty || rulesDirty || !analysis.fields_confirmed) && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />{!analysis.fields_confirmed ? "请先保存并确认字段角色。" : "字段或建议有未保存更改，请保存后再运行。"}</p>}
           <div className="pipeline-config-grid">
-            <label><span>测试集比例</span><select value={pipelineConfig.test_size} onChange={(event) => setPipelineConfig((current) => ({ ...current, test_size: Number(event.target.value) }))}><option value={0.2}>20%（推荐）</option><option value={0.25}>25%</option><option value={0.3}>30%</option></select></label>
-            <label><span>随机种子</span><input type="number" min={0} max={2147483647} value={pipelineConfig.random_seed} onChange={(event) => setPipelineConfig((current) => ({ ...current, random_seed: Number(event.target.value) }))} /></label>
+            {!cleaning && <label><span>测试集比例</span><select value={pipelineConfig.test_size} onChange={(event) => setPipelineConfig((current) => ({ ...current, test_size: Number(event.target.value) }))}><option value={0.2}>20%（推荐）</option><option value={0.25}>25%</option><option value={0.3}>30%</option></select></label>}
+            {!cleaning && <label><span>随机种子</span><input type="number" min={0} max={2147483647} value={pipelineConfig.random_seed} onChange={(event) => setPipelineConfig((current) => ({ ...current, random_seed: Number(event.target.value) }))} /></label>}
             <label><span>数值缺失</span><select value={pipelineConfig.numeric_imputation} onChange={(event) => setPipelineConfig((current) => ({ ...current, numeric_imputation: event.target.value }))}><option value="median">中位数（推荐）</option><option value="mean">均值</option></select></label>
-            <label><span>类别缺失</span><select value={pipelineConfig.categorical_imputation} onChange={(event) => setPipelineConfig((current) => ({ ...current, categorical_imputation: event.target.value }))}><option value="most_frequent">训练集众数</option><option value="missing_category">独立缺失类别</option></select></label>
+            <label><span>类别缺失</span><select value={pipelineConfig.categorical_imputation} onChange={(event) => setPipelineConfig((current) => ({ ...current, categorical_imputation: event.target.value }))}><option value="most_frequent">{cleaning ? "完整数据众数" : "训练集众数"}</option><option value="missing_category">独立缺失类别</option></select></label>
             <label><span>数值缩放</span><select value={pipelineConfig.scaling} onChange={(event) => setPipelineConfig((current) => ({ ...current, scaling: event.target.value }))}><option value="standard">标准化</option><option value="minmax">Min-Max</option><option value="none">不缩放</option></select></label>
             <label><span>类别维度上限</span><input type="number" min={2} max={500} value={pipelineConfig.max_categories} onChange={(event) => setPipelineConfig((current) => ({ ...current, max_categories: Number(event.target.value) }))} /></label>
           </div>
-          <fieldset className="pipeline-checks"><legend>结构处理</legend><label><input type="checkbox" checked={pipelineConfig.drop_duplicates} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_duplicates: event.target.checked }))} />移除完全重复行</label><label><input type="checkbox" checked={pipelineConfig.drop_constant_features} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_constant_features: event.target.checked }))} />按训练集移除常量特征</label>{supervised && project.task_type === "classification" && <label><input type="checkbox" checked={pipelineConfig.stratify_classification} onChange={(event) => setPipelineConfig((current) => ({ ...current, stratify_classification: event.target.checked }))} />分类任务使用分层划分</label>}</fieldset>
+          <fieldset className="pipeline-checks"><legend>结构处理</legend><label><input type="checkbox" checked={pipelineConfig.drop_duplicates} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_duplicates: event.target.checked }))} />移除完全重复行</label><label><input type="checkbox" checked={pipelineConfig.drop_constant_features} onChange={(event) => setPipelineConfig((current) => ({ ...current, drop_constant_features: event.target.checked }))} />按{cleaning ? "完整数据" : "训练集"}移除常量特征</label>{supervised && project.task_type === "classification" && <label><input type="checkbox" checked={pipelineConfig.stratify_classification} onChange={(event) => setPipelineConfig((current) => ({ ...current, stratify_classification: event.target.checked }))} />分类任务使用分层划分</label>}</fieldset>
           {pipelineRun && (
             <div className="pipeline-result" aria-live="polite">
-              <div><Check aria-hidden="true" /><div><strong>最近一次预处理已完成</strong><p>训练集 {pipelineRun.train_rows} 行 · 测试集 {pipelineRun.test_rows} 行 · 输出 {pipelineRun.output_feature_columns.length} 个特征</p></div></div>
-              <dl><div><dt>划分方式</dt><dd>{pipelineRun.stratified ? "固定种子分层" : "固定种子随机"}</dd></div><div><dt>缺失目标</dt><dd>{pipelineRun.target_missing_rows} 行</dd></div><div><dt>应用建议</dt><dd>{pipelineRun.applied_recommendation_ids.length} 条</dd></div><div><dt>内部文件</dt><dd>train.parquet / test.parquet</dd></div></dl>
+              <div><Check aria-hidden="true" /><div><strong>最近一次预处理已完成</strong><p>{cleaning ? `完整数据 ${pipelineRun.full_rows} 行` : `训练集 ${pipelineRun.train_rows} 行 · 测试集 ${pipelineRun.test_rows} 行`} · 输出 {pipelineRun.output_feature_columns.length} 个特征</p></div></div>
+              <dl><div><dt>处理范围</dt><dd>{cleaning ? "完整数据，不划分" : pipelineRun.stratified ? "固定种子分层" : "固定种子随机"}</dd></div><div><dt>{cleaning ? "重复处理" : "缺失目标"}</dt><dd>{cleaning ? (pipelineConfig.drop_duplicates ? "已启用" : "未启用") : `${pipelineRun.target_missing_rows} 行`}</dd></div><div><dt>应用建议</dt><dd>{pipelineRun.applied_recommendation_ids.length} 条</dd></div><div><dt>内部文件</dt><dd>{cleaning ? "processed.parquet" : "train.parquet / test.parquet"}</dd></div></dl>
               <p>评估、CSV 和 HTML 报告将在结果阶段生成；当前文件保存在项目 working 目录。</p>
             </div>
           )}
@@ -446,24 +452,24 @@ export default function ProjectAnalysisPage() {
 
         <section className="analysis-section" aria-labelledby="results-title">
           <div className="analysis-section-header action-header">
-            <div><p className="panel-kicker">同一划分对比</p><h2 id="results-title">快速评估与导出</h2><p>分类使用逻辑回归，回归使用 Ridge；也可以关闭评估，只生成数据和报告。</p></div>
+            <div><p className="panel-kicker">{cleaning ? "完整结果" : "同一划分对比"}</p><h2 id="results-title">{cleaning ? "清洗结果与导出" : "快速评估与导出"}</h2><p>{cleaning ? "纯清洗不运行模型评估，生成一份完整 CSV 和离线报告。" : "分类使用逻辑回归，回归使用 Ridge；也可以关闭评估，只生成数据和报告。"}</p></div>
             <Button onClick={createEvaluation} disabled={!pipelineRun || evaluating} aria-busy={evaluating}>
               {evaluating ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <BarChart3 aria-hidden="true" />}
               {evaluating ? "正在生成" : evaluation ? "重新生成" : "生成结果"}
             </Button>
           </div>
           {!pipelineRun && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />请先完成基础预处理，再生成评估与导出结果。</p>}
-          <fieldset className="evaluation-mode"><legend>评估档位</legend><label data-active={evaluationMode === "quick"}><input type="radio" name="evaluation-mode" value="quick" checked={evaluationMode === "quick"} onChange={() => setEvaluationMode("quick")} /><span><strong>快速</strong><small>对比最低限度兼容方案与完整方案</small></span></label><label data-active={evaluationMode === "off"}><input type="radio" name="evaluation-mode" value="off" checked={evaluationMode === "off"} onChange={() => setEvaluationMode("off")} /><span><strong>关闭</strong><small>只生成 CSV、报告和运行记录</small></span></label></fieldset>
+          <fieldset className="evaluation-mode"><legend>{cleaning ? "输出方式" : "评估档位"}</legend>{!cleaning && <label data-active={evaluationMode === "quick"}><input type="radio" name="evaluation-mode" value="quick" checked={evaluationMode === "quick"} onChange={() => setEvaluationMode("quick")} /><span><strong>快速</strong><small>对比最低限度兼容方案与完整方案</small></span></label>}<label data-active={evaluationMode === "off"}><input type="radio" name="evaluation-mode" value="off" checked={evaluationMode === "off"} onChange={() => setEvaluationMode("off")} /><span><strong>{cleaning ? "生成完整结果" : "关闭"}</strong><small>{cleaning ? "导出一份处理后 CSV 和离线报告" : "只生成 CSV、报告和运行记录"}</small></span></label></fieldset>
           {evaluation && (
             <div className="evaluation-result">
-              <div className="fairness-note"><ShieldCheck aria-hidden="true" /><p>公平比较已确认：两个方案使用相同的 {evaluation.train_rows}/{evaluation.test_rows} 训练测试划分和随机种子 {evaluation.random_seed}。</p></div>
+              <div className="fairness-note"><ShieldCheck aria-hidden="true" /><p>{cleaning ? `已处理完整数据 ${evaluation.full_rows} 行，未创建训练测试划分。` : `公平比较已确认：两个方案使用相同的 ${evaluation.train_rows}/${evaluation.test_rows} 训练测试划分和随机种子 ${evaluation.random_seed}。`}</p></div>
               {evaluation.mode === "quick" && evaluation.baseline && evaluation.complete && (
                 <div className="comparison-grid">
                   {[evaluation.baseline, evaluation.complete].map((scheme) => <article key={scheme.name}><h3>{scheme.name}</h3><dl>{Object.entries(scheme.metrics).map(([key, value]) => <div key={key}><dt>{({ accuracy: "准确率", balanced_accuracy: "平衡准确率", f1_weighted: "加权 F1", mae: "MAE", rmse: "RMSE", r2: "R²" } as Record<string, string>)[key] ?? key}</dt><dd>{value.toFixed(4)}</dd></div>)}</dl></article>)}
                 </div>
               )}
               <div className="download-grid">
-                {Object.entries(evaluation.artifacts).map(([key, artifact]) => <a key={key} href={`${API_BASE}${artifact.download_url}`} download><Download aria-hidden="true" /><span><strong>{key === "train_csv" ? "训练集 CSV" : key === "test_csv" ? "测试集 CSV" : "离线 HTML 报告"}</strong><small>{(artifact.size / 1024).toFixed(1)} KB · SHA-256 已记录</small></span></a>)}
+                {Object.entries(evaluation.artifacts).map(([key, artifact]) => <a key={key} href={`${API_BASE}${artifact.download_url}`} download><Download aria-hidden="true" /><span><strong>{key === "train_csv" ? "训练集 CSV" : key === "test_csv" ? "测试集 CSV" : key === "processed_csv" ? "处理后完整 CSV" : "离线 HTML 报告"}</strong><small>{(artifact.size / 1024).toFixed(1)} KB · SHA-256 已记录</small></span></a>)}
               </div>
             </div>
           )}

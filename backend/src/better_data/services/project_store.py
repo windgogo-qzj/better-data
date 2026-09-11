@@ -123,13 +123,12 @@ class ProjectStore:
                 record.profile = profile_dataset(destination, self.settings.profile_sample_rows)
                 record.status = ProjectStatus.READY
                 self._write_analysis(project_root, build_project_analysis(record))
-            except Exception as exc:  # project remains inspectable after a profiling failure
-                record.status = ProjectStatus.FAILED
-                record.error = str(exc)
+            except Exception as exc:
+                raise ValueError(str(exc)) from exc
             self._write_record(project_root, record)
             return record
         except Exception:
-            if project_root.exists() and not (project_root / "project.json").exists():
+            if project_root.exists():
                 shutil.rmtree(project_root)
             raise
         finally:

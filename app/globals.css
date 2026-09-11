@@ -5932,3 +5932,59 @@ a[href] {
     opacity: 1;
   }
 }
+
+/* Canonical workspace lifecycle feedback and home links */
+.brand-lockup,
+.mobile-brand {
+  color: inherit;
+  text-decoration: none;
+}
+
+.workspace-feedback {
+  position: fixed;
+  z-index: 60;
+  right: 1rem;
+  bottom: 5.5rem;
+  left: 1rem;
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 0.6rem;
+  background: #102047;
+  padding: 0.75rem 0.8rem 0.75rem 1rem;
+  color: #fff;
+  box-shadow: 0 18px 40px rgb(15 31 61 / 0.24);
+}
+
+.workspace-feedback span {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.82rem;
+}
+
+.workspace-feedback button {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #fff;
+}
+
+.workspace-feedback svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .workspace-feedback {
+    right: 2rem;
+    bottom: 2rem;
+    left: auto;
+    width: min(28rem, calc(100% - 4rem));
+  }
+}

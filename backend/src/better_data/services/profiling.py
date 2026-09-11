@@ -51,11 +51,10 @@ def _read_csv_sample(path: Path, sample_rows: int) -> tuple[pl.DataFrame, bool, 
     if sample_rows < 1:
         raise ValueError("画像抽样行数必须大于 0")
 
-    try:
-        with path.open("r", encoding="utf-8-sig", newline="") as source:
-            text_sample = source.read(128 * 1024)
-    except UnicodeDecodeError as exc:
-        raise ValueError("CSV 必须使用 UTF-8 或 UTF-8 BOM 编码") from exc
+    with path.open("rb") as source:
+        byte_sample = source.read(128 * 1024)
+    text_encoding, polars_encoding = _detect_csv_encoding(byte_sample)
+    text_sample = byte_sample.decode(text_encoding)
 
     if not text_sample.strip():
         raise ValueError("CSV 文件为空")
@@ -73,7 +72,7 @@ def _read_csv_sample(path: Path, sample_rows: int) -> tuple[pl.DataFrame, bool, 
             infer_schema_length=min(sample_rows, 5_000),
             ignore_errors=False,
             try_parse_dates=False,
-            encoding="utf8",
+            encoding=polars_encoding,
         )
     except PolarsError as exc:
         raise ValueError(f"CSV 无法解析，请检查分隔符、引号和每行列数：{exc}") from exc
@@ -84,10 +83,46 @@ def _read_csv_sample(path: Path, sample_rows: int) -> tuple[pl.DataFrame, bool, 
     is_sampled = sampled_frame.height > sample_rows
     frame = sampled_frame.head(sample_rows)
     warnings = [f"数据画像基于前 {sample_rows:,} 行抽样"] if is_sampled else []
+    if polars_encoding != "utf8":
+        warnings.append(f"检测到 CSV 编码：{text_encoding.upper()}")
     if delimiter != ",":
         visible_delimiter = "TAB" if delimiter == "\t" else delimiter
         warnings.append(f"检测到字段分隔符：{visible_delimiter}")
     return frame, is_sampled, warnings
+
+
+def _detect_csv_encoding(byte_sample: bytes) -> tuple[str, str]:
+    """Return a safe text decoder and the matching Polars CSV encoding.
+
+    UTF-8 remains the default. GB18030 is selected only when the decoded sample
+    contains a meaningful amount of CJK text; this avoids interpreting ordinary
+    Western punctuation as Chinese. Windows-1252 covers common exports from
+    desktop spreadsheet tools.
+    """
+    try:
+        byte_sample.decode("utf-8-sig")
+        return "utf-8-sig", "utf8"
+    except UnicodeDecodeError:
+        pass
+
+    try:
+        gb18030_text = byte_sample.decode("gb18030")
+        visible_count = sum(character.isalnum() for character in gb18030_text)
+        cjk_count = sum("\u3400" <= character <= "\u9fff" for character in gb18030_text)
+        if cjk_count >= 2 and cjk_count / max(visible_count, 1) >= 0.02:
+            return "gb18030", "gb18030"
+    except UnicodeDecodeError:
+        gb18030_text = ""
+
+    try:
+        byte_sample.decode("windows-1252")
+        return "windows-1252", "windows-1252"
+    except UnicodeDecodeError:
+        if gb18030_text:
+            return "gb18030", "gb18030"
+        raise ValueError(
+            "无法识别 CSV 编码，请另存为 UTF-8、GB18030 或 Windows-1252"
+        ) from None
 
 
 def _detect_delimiter(text_sample: str) -> str:

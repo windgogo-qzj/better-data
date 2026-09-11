@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
@@ -144,8 +144,9 @@ async function readJson(response: Response) {
   return payload;
 }
 
-export default function ProjectAnalysisPage({ requestedStep = "overview" }: { requestedStep?: string }) {
+export default function ProjectAnalysisPage({ requestedStep }: { requestedStep?: string }) {
   const params = useParams<{ projectId: string }>();
+  const router = useRouter();
   const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
   const routeStep: WorkflowStep = workflowSteps.some((item) => item.key === requestedStep)
     ? requestedStep as WorkflowStep
@@ -178,6 +179,12 @@ export default function ProjectAnalysisPage({ requestedStep = "overview" }: { re
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (projectId && requestedStep !== routeStep) {
+      router.replace(`/projects/${projectId}/${routeStep}`);
+    }
+  }, [projectId, requestedStep, routeStep, router]);
 
   useEffect(() => {
     if (!projectId) return;

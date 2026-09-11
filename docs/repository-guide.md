@@ -21,7 +21,7 @@ flowchart LR
     API --> User
 ```
 
-- 前端运行在 `http://127.0.0.1:5173`，负责配置、预览和展示。
+- 前端运行在 `http://localhost:5173`，负责产品介绍、配置、预览和展示。
 - 后端运行在 `http://127.0.0.1:8000`，负责读取文件、数据分析和项目存储。
 - 用户数据写入被 Git 忽略的 `work/projects/`，不会随源码提交到 GitHub。
 - 当前核心路径不依赖云数据库、用户登录或外部服务。
@@ -60,8 +60,11 @@ flowchart LR
 
 | 文件 | 用途 |
 | --- | --- |
-| `page.tsx` | 首页工作台；加载项目列表、打开创建项目对话框、上传文件并展示状态 |
-| `projects/[projectId]/page.tsx` | 项目分析页；确认字段角色、查看六维质量评分和启停规则建议 |
+| `page.tsx` | 品牌首页；介绍产品定位、本地优先原则和能力范围，唯一主操作进入工作区 |
+| `workspace/page.tsx` | 项目库；加载已有项目、本地服务状态和项目库设置 |
+| `projects/new/page.tsx` | 独立项目创建流程；校验文件与任务、展示处理状态并在成功后进入概览 |
+| `projects/[projectId]/page.tsx` | 旧项目地址兼容入口；自动转到数据概览 |
+| `projects/[projectId]/[step]/page.tsx` | 引导式项目流程入口；按地址展示概览、字段、质量、方案、执行或结果阶段 |
 | `layout.tsx` | HTML 根结构、中文语言标记、页面标题和 favicon |
 | `globals.css` | 设计 Token、全局样式、组件状态、响应式布局和减少动效规则 |
 | `chatgpt-auth.ts` | 脚手架保留的 ChatGPT 认证辅助函数；当前产品不涉及登录，未进入主流程 |

@@ -18,6 +18,7 @@ from better_data.models import (
     ProjectAnalysis,
     ProjectRecord,
     ProjectStatus,
+    TrashedProjectRecord,
     RecommendationSelectionUpdate,
     PipelineConfig,
     PipelineRunRecord,
@@ -154,6 +155,79 @@ class ProjectStore:
             return ProjectRecord.model_validate_json(metadata.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise ValueError("项目元数据损坏，无法读取") from exc
+
+    def list_trash(self) -> list[TrashedProjectRecord]:
+        records: list[TrashedProjectRecord] = []
+        trash_root = self._trash_root()
+        if not trash_root.exists():
+            return records
+        for metadata in trash_root.glob("*/project.json"):
+            try:
+                project = ProjectRecord.model_validate_json(
+                    metadata.read_text(encoding="utf-8")
+                )
+                payload = json.loads(
+                    (metadata.parent / "trash.json").read_text(encoding="utf-8")
+                )
+                records.append(
+                    TrashedProjectRecord(
+                        **project.model_dump(),
+                        trashed_at=datetime.fromisoformat(payload["trashed_at"]),
+                    )
+                )
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return sorted(records, key=lambda item: item.trashed_at, reverse=True)
+
+    def trash(self, project_id: str) -> TrashedProjectRecord:
+        project = self.get(project_id)
+        if project.status == ProjectStatus.PROCESSING:
+            raise ValueError("项目正在处理中，完成后才能删除")
+
+        project_root = self._project_root(project_id)
+        trash_root = self._trash_root()
+        destination = self._trashed_project_root(project_id)
+        if destination.exists():
+            raise ValueError("回收站中已存在同名项目")
+        trash_root.mkdir(exist_ok=True)
+
+        trashed_at = datetime.now(UTC)
+        trash_metadata = project_root / "trash.json"
+        self._write_json_atomic(
+            trash_metadata,
+            {"schema_version": 1, "trashed_at": trashed_at.isoformat()},
+        )
+        try:
+            project_root.replace(destination)
+        except Exception:
+            trash_metadata.unlink(missing_ok=True)
+            raise
+        return TrashedProjectRecord(**project.model_dump(), trashed_at=trashed_at)
+
+    def restore(self, project_id: str) -> ProjectRecord:
+        source = self._trashed_project_root(project_id)
+        metadata = source / "project.json"
+        if not metadata.is_file():
+            raise KeyError(project_id)
+        try:
+            project = ProjectRecord.model_validate_json(
+                metadata.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError("项目元数据损坏，无法恢复") from exc
+
+        destination = self._project_root(project_id)
+        if destination.exists():
+            raise ValueError("项目库中已存在同名项目，无法恢复")
+        source.replace(destination)
+        (destination / "trash.json").unlink(missing_ok=True)
+        return project
+
+    def delete_permanently(self, project_id: str) -> None:
+        project_root = self._trashed_project_root(project_id)
+        if not (project_root / "project.json").is_file():
+            raise KeyError(project_id)
+        shutil.rmtree(project_root)
 
     def get_analysis(self, project_id: str) -> ProjectAnalysis:
         project = self.get(project_id)
@@ -333,6 +407,18 @@ class ProjectStore:
         if not re.fullmatch(r"[0-9a-f]{32}", project_id):
             raise KeyError(project_id)
         project_root = (self.root / project_id).resolve()
+        self._assert_inside_library(project_root)
+        return project_root
+
+    def _trash_root(self) -> Path:
+        trash_root = (self.root / ".trash").resolve()
+        self._assert_inside_library(trash_root)
+        return trash_root
+
+    def _trashed_project_root(self, project_id: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{32}", project_id):
+            raise KeyError(project_id)
+        project_root = (self._trash_root() / project_id).resolve()
         self._assert_inside_library(project_root)
         return project_root
 

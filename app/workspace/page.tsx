@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Activity,
-  Check,
   ChevronRight,
   CircleHelp,
   Database,
@@ -13,17 +12,29 @@ import {
   FolderKanban,
   HardDrive,
   Home,
-  Info,
-  ListChecks,
+  MoreHorizontal,
   Plus,
+  RotateCcw,
   Save,
+  Search,
   Settings,
   ShieldCheck,
+  Trash2,
+  X,
 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -31,10 +42,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
 type ServiceState = "connecting" | "ready" | "unavailable";
+type LibraryView = "projects" | "trash";
 
 type ProjectSummary = {
   id: string;
@@ -46,6 +65,8 @@ type ProjectSummary = {
   created_at: string;
   profile?: { sampled_rows: number; column_count: number } | null;
 };
+
+type TrashedProject = ProjectSummary & { trashed_at: string };
 
 type ProjectLibraryInfo = {
   path: string;
@@ -83,6 +104,14 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+}
+
 function projectStatus(status: string) {
   if (status === "ready") return { label: "待确认", className: "status-warning" };
   if (["processing", "running"].includes(status)) return { label: "处理中", className: "status-info" };
@@ -95,30 +124,40 @@ export default function WorkspacePage() {
   const router = useRouter();
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [trashedProjects, setTrashedProjects] = useState<TrashedProject[]>([]);
   const [serviceState, setServiceState] = useState<ServiceState>("connecting");
   const [libraryInfo, setLibraryInfo] = useState<ProjectLibraryInfo | null>(null);
+  const [libraryView, setLibraryView] = useState<LibraryView>("projects");
+  const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [libraryPath, setLibraryPath] = useState("");
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ project: ProjectSummary; permanent: boolean } | null>(null);
+  const [undoProject, setUndoProject] = useState<TrashedProject | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
       fetch(`${API_BASE}/api/projects`, { signal: controller.signal }),
+      fetch(`${API_BASE}/api/trash`, { signal: controller.signal }),
       fetch(`${API_BASE}/api/settings/project-library`, { signal: controller.signal }),
     ])
-      .then(async ([projectsResponse, libraryResponse]) => {
-        if (!projectsResponse.ok || !libraryResponse.ok) throw new Error("本地服务返回异常");
-        const [records, projectLibrary] = await Promise.all([
+      .then(async ([projectsResponse, trashResponse, libraryResponse]) => {
+        if (!projectsResponse.ok || !trashResponse.ok || !libraryResponse.ok) {
+          throw new Error("本地服务返回异常");
+        }
+        const [records, trash, projectLibrary] = await Promise.all([
           projectsResponse.json() as Promise<ProjectSummary[]>,
+          trashResponse.json() as Promise<TrashedProject[]>,
           libraryResponse.json() as Promise<ProjectLibraryInfo>,
         ]);
-        return { records, projectLibrary };
+        return { records, trash, projectLibrary };
       })
-      .then(({ records, projectLibrary }) => {
+      .then(({ records, trash, projectLibrary }) => {
         setProjects(records);
+        setTrashedProjects(trash);
         setLibraryInfo(projectLibrary);
         setLibraryPath(projectLibrary.path);
         setServiceState("ready");
@@ -149,21 +188,36 @@ export default function WorkspacePage() {
     return () => lifecycle.abort();
   }, [router]);
 
-  const metrics = useMemo(() => {
+  const summary = useMemo(() => {
     const activeCount = projects.filter((project) => ["processing", "running"].includes(project.status)).length;
     const storage = projects.reduce((total, project) => total + project.source_size, 0);
-    return [
-      { label: "本地项目", value: String(projects.length), note: projects.length ? "保存在本机" : "还没有项目", icon: FolderKanban, tone: "blue" },
-      { label: "运行中任务", value: String(activeCount), note: activeCount ? "后台处理中" : "队列空闲", icon: Activity, tone: "green" },
-      { label: "项目库占用", value: formatBytes(storage), note: "原始文件统计", icon: HardDrive, tone: "amber" },
-    ];
+    return { activeCount, storage };
   }, [projects]);
+
+  const visibleProjects = useMemo(() => {
+    const source = libraryView === "projects" ? projects : trashedProjects;
+    const normalized = query.trim().toLocaleLowerCase("zh-CN");
+    if (!normalized) return source;
+    return source.filter((project) =>
+      [project.name, project.source_filename, taskLabels[project.task_type] ?? project.task_type]
+        .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalized)),
+    );
+  }, [libraryView, projects, query, trashedProjects]);
 
   function openSettings(event?: MouseEvent<HTMLButtonElement>) {
     settingsReturnFocusRef.current = event?.currentTarget ?? null;
     setLibraryPath(libraryInfo?.path ?? "");
     setSettingsError(null);
     setSettingsOpen(true);
+  }
+
+  async function reloadLibrary() {
+    const [projectsResponse, trashResponse] = await Promise.all([
+      fetch(`${API_BASE}/api/projects`),
+      fetch(`${API_BASE}/api/trash`),
+    ]);
+    if (projectsResponse.ok) setProjects(await projectsResponse.json() as ProjectSummary[]);
+    if (trashResponse.ok) setTrashedProjects(await trashResponse.json() as TrashedProject[]);
   }
 
   async function saveProjectLibrary() {
@@ -185,14 +239,59 @@ export default function WorkspacePage() {
       const updated = payload as ProjectLibraryInfo;
       setLibraryInfo(updated);
       setLibraryPath(updated.path);
-      const projectsResponse = await fetch(`${API_BASE}/api/projects`);
-      if (projectsResponse.ok) setProjects(await projectsResponse.json() as ProjectSummary[]);
+      await reloadLibrary();
       setSettingsOpen(false);
       setAnnouncement(`项目库已保存到“${updated.path}”。`);
     } catch (error) {
       setSettingsError(error instanceof Error ? error.message : "无法连接本地处理服务，请稍后重试。");
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const { project, permanent } = pendingDelete;
+    const url = permanent
+      ? `${API_BASE}/api/trash/${project.id}`
+      : `${API_BASE}/api/projects/${project.id}`;
+    try {
+      const response = await fetch(url, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(payload.detail ?? "删除失败，请稍后重试。");
+      }
+      if (permanent) {
+        setTrashedProjects((current) => current.filter((item) => item.id !== project.id));
+        setAnnouncement(`“${project.name}”已永久删除。`);
+      } else {
+        const trashed = await response.json() as TrashedProject;
+        setProjects((current) => current.filter((item) => item.id !== project.id));
+        setTrashedProjects((current) => [trashed, ...current]);
+        setUndoProject(trashed);
+        setAnnouncement(`“${project.name}”已移到回收站，可撤销。`);
+      }
+    } catch (error) {
+      setAnnouncement(error instanceof Error ? error.message : "删除失败，请稍后重试。");
+    } finally {
+      setPendingDelete(null);
+    }
+  }
+
+  async function restoreProject(project: TrashedProject) {
+    try {
+      const response = await fetch(`${API_BASE}/api/trash/${project.id}/restore`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(payload.detail ?? "恢复失败，请稍后重试。");
+      }
+      const restored = await response.json() as ProjectSummary;
+      setTrashedProjects((current) => current.filter((item) => item.id !== project.id));
+      setProjects((current) => [restored, ...current]);
+      setUndoProject((current) => current?.id === project.id ? null : current);
+      setAnnouncement(`“${project.name}”已恢复到项目库。`);
+    } catch (error) {
+      setAnnouncement(error instanceof Error ? error.message : "恢复失败，请稍后重试。");
     }
   }
 
@@ -215,13 +314,12 @@ export default function WorkspacePage() {
         <nav className="sidebar-nav" aria-label="主导航">
           <p className="nav-section-label">工作区</p>
           <Link className="nav-item nav-item-active" href="/workspace" aria-current="page"><Home aria-hidden="true" />项目库</Link>
-          <a className="nav-item" href="#projects"><FolderKanban aria-hidden="true" />最近项目</a>
-          <a className="nav-item" href="#system-status"><ListChecks aria-hidden="true" />系统状态</a>
           <div className="nav-divider" />
           <p className="nav-section-label">系统</p>
           <button className="nav-item" type="button" onClick={openSettings}><Settings aria-hidden="true" />设置</button>
           <button className="nav-item nav-item-disabled" type="button" disabled title="即将开放"><CircleHelp aria-hidden="true" />使用帮助<span>即将开放</span></button>
         </nav>
+        <div className="sidebar-privacy"><ShieldCheck aria-hidden="true" /><span><strong>仅在本机处理</strong><small>外部数据传输已关闭</small></span></div>
       </aside>
 
       <div className="app-main">
@@ -231,85 +329,125 @@ export default function WorkspacePage() {
           <div className={`service-badge ${serviceCopy.className}`} role="status"><span className="service-dot" aria-hidden="true" />{serviceCopy.label}</div>
         </header>
 
-        <main id="main-content" className="main-content">
-          <section className="page-heading" aria-labelledby="workspace-title">
-            <div><p className="panel-kicker">项目工作台</p><h1 id="workspace-title">继续你的数据处理工作</h1><p>查看最近项目，或者创建一套新的可追踪预处理流程。</p></div>
+        <main id="main-content" className="main-content workspace-main">
+          <section className="page-heading workspace-heading" aria-labelledby="workspace-title">
+            <div><p className="panel-kicker">项目库</p><h1 id="workspace-title">你的数据项目</h1><p>从上次停下的位置继续，或者创建一套新的可追踪处理流程。</p></div>
             <Link className="workspace-primary-link" href="/projects/new"><Plus aria-hidden="true" />新建项目</Link>
           </section>
 
-          <section className="metrics-grid" aria-label="项目概览">
-            {metrics.map(({ label, value, note, icon: Icon, tone }) => (
-              <article className="metric-card" key={label}>
-                <span className={`metric-icon metric-icon-${tone}`}><Icon aria-hidden="true" /></span>
-                <div><p>{label}</p><div><strong>{value}</strong><span>{note}</span></div></div>
-              </article>
-            ))}
+          <dl className="workspace-summary" aria-label="工作区摘要">
+            <div><dt><FolderKanban aria-hidden="true" />本地项目</dt><dd>{projects.length}</dd></div>
+            <div><dt><Activity aria-hidden="true" />运行中</dt><dd>{summary.activeCount || "空闲"}</dd></div>
+            <div><dt><HardDrive aria-hidden="true" />项目库占用</dt><dd>{formatBytes(summary.storage)}</dd></div>
+            <div><dt><ShieldCheck aria-hidden="true" />处理环境</dt><dd>{serviceState === "ready" ? "本机就绪" : serviceState === "unavailable" ? "需要启动" : "检查中"}</dd></div>
+          </dl>
+
+          <section className="project-commandbar" aria-label="项目库筛选">
+            <div className="library-tabs" role="tablist" aria-label="项目视图">
+              <button type="button" role="tab" aria-selected={libraryView === "projects"} onClick={() => setLibraryView("projects")}>全部项目 <span>{projects.length}</span></button>
+              <button type="button" role="tab" aria-selected={libraryView === "trash"} onClick={() => setLibraryView("trash")}>回收站 <span>{trashedProjects.length}</span></button>
+            </div>
+            <label className="project-search">
+              <span className="sr-only">搜索项目</span>
+              <Search aria-hidden="true" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目或文件" />
+            </label>
           </section>
 
-          <div className="workspace-grid workspace-library-grid">
-            <section id="projects" className="panel projects-panel workspace-projects" aria-labelledby="projects-title">
-              <div className="panel-header compact-header">
-                <div><p className="panel-kicker">继续工作</p><h2 id="projects-title">最近项目</h2></div>
-                <span className="project-count">共 {projects.length} 个</span>
-              </div>
-              <div className="projects-body">
-                {projects.length ? (
-                  <ul className="project-list">
-                    {projects.slice(0, 8).map((project) => {
-                      const status = projectStatus(project.status);
-                      const xlsx = project.source_filename.toLowerCase().endsWith(".xlsx");
-                      return (
-                        <li key={project.id} className="project-row">
-                          <span className="project-icon"><FileSpreadsheet aria-hidden="true" /></span>
-                          <div className="project-main">
-                            <h3><Link href={`/projects/${project.id}/overview`}>{project.name}</Link></h3>
-                            <p>{taskLabels[project.task_type] ?? project.task_type}<span aria-hidden="true"> · </span>{project.source_filename}<span aria-hidden="true"> · </span>{formatBytes(project.source_size)}</p>
-                          </div>
-                          {project.profile && <span className="project-meta">{project.profile.column_count} 列 · {project.profile.sampled_rows} 行画像</span>}
-                          {xlsx && <Badge variant="outline" className="status-info">仅预览</Badge>}
-                          <Badge variant="outline" className={status.className}>{status.label}</Badge>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <div className="empty-state">
-                    <span><FolderKanban aria-hidden="true" /></span>
-                    <div><h3>还没有项目</h3><p>创建第一套数据处理流程后，可以从这里继续。</p></div>
-                    <Link className="workspace-secondary-link" href="/projects/new">新建项目</Link>
-                  </div>
-                )}
-              </div>
-            </section>
+          <section className="project-library" aria-labelledby="projects-title">
+            <header className="project-library-header">
+              <div><h2 id="projects-title">{libraryView === "projects" ? "全部项目" : "回收站"}</h2><p>{libraryView === "projects" ? "按最近创建排序" : "项目可恢复，永久删除后无法撤销"}</p></div>
+              <span>{visibleProjects.length} 个结果</span>
+            </header>
 
-            <aside id="system-status" className="side-column" aria-label="系统信息">
-              <section className="system-panel" aria-labelledby="system-title">
-                <div className="system-heading">
-                  <div><p>本机处理能力</p><h2 id="system-title">运行环境</h2></div>
-                  <Badge className={serviceState === "ready" ? "status-success" : serviceState === "unavailable" ? "status-error" : "status-neutral"}>
-                    {serviceState === "ready" ? <Check aria-hidden="true" /> : <Info aria-hidden="true" />}
-                    {serviceState === "ready" ? "已就绪" : serviceState === "unavailable" ? "需启动" : "检查中"}
-                  </Badge>
+            {visibleProjects.length ? (
+              <ul className="project-list">
+                {visibleProjects.map((project) => {
+                  const status = projectStatus(project.status);
+                  const inTrash = libraryView === "trash";
+                  const trashed = project as TrashedProject;
+                  const busy = ["processing", "running"].includes(project.status);
+                  return (
+                    <li key={project.id} className="project-row">
+                      <span className="project-icon"><FileSpreadsheet aria-hidden="true" /></span>
+                      <div className="project-main">
+                        <h3>{inTrash ? project.name : <Link href={`/projects/${project.id}/overview`}>{project.name}</Link>}</h3>
+                        <p>{taskLabels[project.task_type] ?? project.task_type}<span aria-hidden="true"> · </span>{project.source_filename}<span aria-hidden="true"> · </span>{formatBytes(project.source_size)}</p>
+                      </div>
+                      <div className="project-detail">
+                        {project.profile && <span>{project.profile.column_count} 列 · {project.profile.sampled_rows} 行画像</span>}
+                        <time dateTime={inTrash ? trashed.trashed_at : project.created_at}>
+                          {inTrash ? `移除于 ${formatDate(trashed.trashed_at)}` : formatDate(project.created_at)}
+                        </time>
+                      </div>
+                      {!inTrash && <Badge variant="outline" className={status.className}>{status.label}</Badge>}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="project-actions" type="button" aria-label={`管理项目“${project.name}”`}><MoreHorizontal aria-hidden="true" /></button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {inTrash ? (
+                            <>
+                              <DropdownMenuItem onSelect={() => void restoreProject(trashed)}><RotateCcw aria-hidden="true" />恢复项目</DropdownMenuItem>
+                              <DropdownMenuItem variant="destructive" onSelect={() => setPendingDelete({ project, permanent: true })}><Trash2 aria-hidden="true" />永久删除</DropdownMenuItem>
+                            </>
+                          ) : (
+                            <DropdownMenuItem disabled={busy} variant="destructive" onSelect={() => setPendingDelete({ project, permanent: false })}><Trash2 aria-hidden="true" />{busy ? "处理中，暂不可删除" : "移到回收站"}</DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="empty-state">
+                <span>{libraryView === "projects" ? <FolderKanban aria-hidden="true" /> : <Trash2 aria-hidden="true" />}</span>
+                <div>
+                  <h3>{query ? "没有匹配的项目" : libraryView === "projects" ? "还没有项目" : "回收站是空的"}</h3>
+                  <p>{query ? "试试项目名称、文件名或任务类型。" : libraryView === "projects" ? "创建第一套数据处理流程后，可以从这里继续。" : "移除的项目会先保留在这里。"}</p>
                 </div>
-                <dl className="system-list">
-                  <div><dt>大型任务队列</dt><dd>{metrics[1].value === "0" ? "空闲" : `${metrics[1].value} 个运行中`}</dd></div>
-                  <div><dt>项目库存储</dt><dd>{metrics[2].value}</dd></div>
-                  <div><dt>项目库位置</dt><dd className="library-path" title={libraryInfo?.path}>{libraryInfo?.path ?? "读取中"}</dd></div>
-                  <div><dt>外部数据传输</dt><dd><ShieldCheck aria-hidden="true" />已关闭</dd></div>
-                </dl>
-                {serviceState === "unavailable" && <p className="service-help" role="status"><Info aria-hidden="true" />启动本地后端服务后刷新页面。</p>}
-              </section>
-            </aside>
-          </div>
+                {!query && libraryView === "projects" && <Link className="workspace-secondary-link" href="/projects/new">新建项目</Link>}
+              </div>
+            )}
+          </section>
+
+          <p className="workspace-library-path" title={libraryInfo?.path}>项目库位置：{libraryInfo?.path ?? "读取中"}</p>
         </main>
       </div>
 
       <nav className="mobile-nav" aria-label="移动端主导航">
         <Link className="mobile-nav-item mobile-nav-active" href="/workspace" aria-current="page"><Home aria-hidden="true" /><span>项目</span></Link>
         <Link className="mobile-nav-item" href="/projects/new"><Plus aria-hidden="true" /><span>新建</span></Link>
-        <a className="mobile-nav-item" href="#system-status"><ListChecks aria-hidden="true" /><span>状态</span></a>
         <button className="mobile-nav-item" type="button" onClick={openSettings}><Settings aria-hidden="true" /><span>设置</span></button>
       </nav>
+
+      {undoProject && (
+        <div className="workspace-undo" role="status">
+          <span>“{undoProject.name}”已移到回收站</span>
+          <button type="button" onClick={() => void restoreProject(undoProject)}>撤销</button>
+          <button type="button" aria-label="关闭提示" onClick={() => setUndoProject(null)}><X aria-hidden="true" /></button>
+        </div>
+      )}
+
+      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingDelete?.permanent ? "永久删除这个项目？" : "将项目移到回收站？"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.permanent
+                ? `“${pendingDelete.project.name}”的原始副本、处理中间文件和结果将永久删除，此操作无法撤销。`
+                : `“${pendingDelete?.project.name}”会从项目库移到回收站，你之后仍可恢复。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant={pendingDelete?.permanent ? "destructive" : "default"} onClick={() => void confirmDelete()}>
+              {pendingDelete?.permanent ? "永久删除" : "移到回收站"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={settingsOpen} onOpenChange={(open) => { setSettingsOpen(open); if (!open) setSettingsError(null); }}>
         <DialogContent

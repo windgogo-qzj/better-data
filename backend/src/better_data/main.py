@@ -19,6 +19,7 @@ from better_data.models import (
     ProjectLibraryInfo,
     ProjectLibraryUpdate,
     ProjectRecord,
+    TrashedProjectRecord,
     RecommendationSelectionUpdate,
     TaskType,
 )
@@ -45,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "X-Better-Data-Token"],
 )
 
@@ -58,6 +59,39 @@ def health() -> HealthResponse:
 @app.get("/api/projects", response_model=list[ProjectRecord])
 def list_projects() -> list[ProjectRecord]:
     return store.list()
+
+
+@app.get("/api/trash", response_model=list[TrashedProjectRecord])
+def list_trashed_projects() -> list[TrashedProjectRecord]:
+    return store.list_trash()
+
+
+@app.delete("/api/projects/{project_id}", response_model=TrashedProjectRecord)
+def trash_project(project_id: str) -> TrashedProjectRecord:
+    try:
+        return store.trash(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/trash/{project_id}/restore", response_model=ProjectRecord)
+def restore_project(project_id: str) -> ProjectRecord:
+    try:
+        return store.restore(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="回收站中没有这个项目") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.delete("/api/trash/{project_id}", status_code=204)
+def permanently_delete_project(project_id: str) -> None:
+    try:
+        store.delete_permanently(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="回收站中没有这个项目") from exc
 
 
 @app.get("/api/projects/{project_id}", response_model=ProjectRecord)

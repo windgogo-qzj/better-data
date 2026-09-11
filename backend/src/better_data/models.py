@@ -74,6 +74,10 @@ class ProjectRecord(BaseModel):
     error: str | None = None
 
 
+class TrashedProjectRecord(ProjectRecord):
+    trashed_at: datetime
+
+
 class FieldRole(BaseModel):
     name: str
     role: ColumnRole

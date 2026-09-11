@@ -426,10 +426,10 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 | 项目 | 内容 |
 | --- | --- |
 | GitHub Issue | [#19 重构品牌首页与引导式项目工作流](https://github.com/windgogo-qzj/better-data/issues/19) |
-| Pull Request | 待本地验收完成后创建 |
+| Pull Request | [#20 重构品牌首页与引导式项目工作流](https://github.com/windgogo-qzj/better-data/pull/20) |
 | 分支 | `codex/frontend-guided-flow` |
 | 前端提交 | `b375c18 feat: 重构品牌首页与引导式工作流` |
-| 当前阶段 | 本地实现和回归验证完成，等待创建 PR |
+| 当前阶段 | PR #20 已通过首轮 GitHub Actions，等待合并 |
 
 ### 问题复核
 
@@ -457,6 +457,7 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 - 本地 HTTP 冒烟：品牌首页、项目库、新建项目页与六个项目阶段均返回 HTTP 200。
 - `git diff --check`：通过。
 - 后端回归测试：**29 passed**；仅保留既有依赖弃用和沙箱无法写入 `.pytest_cache` 的非阻断警告。
+- GitHub Actions 首轮：前端构建与后端测试均通过。
 
 ### 关键决策
 

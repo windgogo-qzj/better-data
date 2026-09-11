@@ -74,6 +74,7 @@ type Project = {
   task_type: string;
   status: string;
   source_filename: string;
+  error?: string | null;
   profile: {
     sampled_rows: number;
     is_sampled: boolean;
@@ -190,17 +191,21 @@ export default function ProjectAnalysisPage({ requestedStep }: { requestedStep?:
   useEffect(() => {
     if (!projectId) return;
     const controller = new AbortController();
-    Promise.all([
-      fetch(`${API_BASE}/api/projects/${projectId}`, { signal: controller.signal }).then(readJson),
-      fetch(`${API_BASE}/api/projects/${projectId}/analysis`, { signal: controller.signal }).then(readJson),
-      fetch(`${API_BASE}/api/projects/${projectId}/pipeline-runs/latest`, { signal: controller.signal })
-        .then((response) => response.status === 404 ? null : readJson(response)),
-      fetch(`${API_BASE}/api/projects/${projectId}/evaluation`, { signal: controller.signal })
-        .then((response) => response.status === 404 ? null : readJson(response)),
-    ])
-      .then(([projectPayload, analysisPayload, runPayload, evaluationPayload]: [Project, Analysis, PipelineRun | null, Evaluation | null]) => {
+    fetch(`${API_BASE}/api/projects/${projectId}`, { signal: controller.signal })
+      .then(readJson)
+      .then(async (projectPayload: Project) => {
         setProject(projectPayload);
         if (projectPayload.task_type === "cleaning") setEvaluationMode("off");
+        if (!projectPayload.profile || projectPayload.status === "failed") {
+          throw new Error(projectPayload.error ?? "这个项目没有生成可用的数据画像，请返回项目库后重新导入文件。");
+        }
+        const [analysisPayload, runPayload, evaluationPayload] = await Promise.all([
+          fetch(`${API_BASE}/api/projects/${projectId}/analysis`, { signal: controller.signal }).then(readJson) as Promise<Analysis>,
+          fetch(`${API_BASE}/api/projects/${projectId}/pipeline-runs/latest`, { signal: controller.signal })
+            .then((response) => response.status === 404 ? null : readJson(response)) as Promise<PipelineRun | null>,
+          fetch(`${API_BASE}/api/projects/${projectId}/evaluation`, { signal: controller.signal })
+            .then((response) => response.status === 404 ? null : readJson(response)) as Promise<Evaluation | null>,
+        ]);
         applyAnalysis(analysisPayload);
         setPipelineRun(runPayload);
         setEvaluation(evaluationPayload);
@@ -344,7 +349,7 @@ export default function ProjectAnalysisPage({ requestedStep }: { requestedStep?:
       <a className="skip-link" href="#analysis-main">跳到主要内容</a>
       <p className="sr-only" aria-live="polite" aria-atomic="true">{notice}</p>
       <header className="analysis-topbar">
-        <Link className="analysis-brand" href="/workspace" aria-label="返回 Better Data 项目库">
+        <Link className="analysis-brand" href="/" aria-label="返回 Better Data 首页">
           <span className="brand-mark"><Database aria-hidden="true" /></span>
           <span><strong>Better Data</strong><small>本地数据工作台</small></span>
         </Link>

@@ -33,6 +33,8 @@ type CreationState = "idle" | "creating" | "success";
 type CreatedProject = {
   id: string;
   name: string;
+  status: string;
+  error?: string | null;
   profile?: { column_count: number; sampled_rows: number } | null;
 };
 
@@ -92,6 +94,9 @@ export default function NewProjectPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "项目创建失败，请检查文件后重试。");
       const project = payload as CreatedProject;
+      if (project.status === "failed" || !project.profile) {
+        throw new Error(project.error ?? "数据画像生成失败，请检查文件编码、表头和数据格式。");
+      }
       setCreatedProject(project);
       setCreationState("success");
       window.setTimeout(() => router.push(`/projects/${project.id}/overview`), 650);
@@ -106,7 +111,7 @@ export default function NewProjectPage() {
       <a className="skip-link" href="#new-project-main">跳到主要内容</a>
       <header className="new-project-header">
         <div className="new-project-header-inner">
-          <Link className="new-project-brand" href="/workspace"><span><Database aria-hidden="true" /></span><strong>Better Data</strong></Link>
+          <Link className="new-project-brand" href="/" aria-label="返回 Better Data 首页"><span><Database aria-hidden="true" /></span><strong>Better Data</strong></Link>
           <Link className="new-project-back" href="/workspace"><ArrowLeft aria-hidden="true" />返回项目库</Link>
         </div>
       </header>

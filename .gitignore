@@ -45,6 +45,7 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/backend/work/
 /backend/.pytest_cache/
 /backend/.coverage
 **/__pycache__/

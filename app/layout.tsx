@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./landing-v3.css";
 
 export const metadata: Metadata = {
   title: "Better Data · 本地数据预处理工作台",

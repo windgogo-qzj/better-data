@@ -216,8 +216,15 @@ export default function WorkspacePage() {
       fetch(`${API_BASE}/api/projects`),
       fetch(`${API_BASE}/api/trash`),
     ]);
-    if (projectsResponse.ok) setProjects(await projectsResponse.json() as ProjectSummary[]);
-    if (trashResponse.ok) setTrashedProjects(await trashResponse.json() as TrashedProject[]);
+    if (!projectsResponse.ok || !trashResponse.ok) {
+      throw new Error("项目状态刷新失败，请确认本地服务仍在运行。");
+    }
+    const [nextProjects, nextTrash] = await Promise.all([
+      projectsResponse.json() as Promise<ProjectSummary[]>,
+      trashResponse.json() as Promise<TrashedProject[]>,
+    ]);
+    setProjects(nextProjects);
+    setTrashedProjects(nextTrash);
   }
 
   async function saveProjectLibrary() {
@@ -263,11 +270,13 @@ export default function WorkspacePage() {
       }
       if (permanent) {
         setTrashedProjects((current) => current.filter((item) => item.id !== project.id));
+        await reloadLibrary();
         setAnnouncement(`“${project.name}”已永久删除。`);
       } else {
         const trashed = await response.json() as TrashedProject;
         setProjects((current) => current.filter((item) => item.id !== project.id));
         setTrashedProjects((current) => [trashed, ...current]);
+        await reloadLibrary();
         setUndoProject(trashed);
         setAnnouncement(`“${project.name}”已移到回收站，可撤销。`);
       }
@@ -288,6 +297,7 @@ export default function WorkspacePage() {
       const restored = await response.json() as ProjectSummary;
       setTrashedProjects((current) => current.filter((item) => item.id !== project.id));
       setProjects((current) => [restored, ...current]);
+      await reloadLibrary();
       setUndoProject((current) => current?.id === project.id ? null : current);
       setAnnouncement(`“${project.name}”已恢复到项目库。`);
     } catch (error) {
@@ -307,10 +317,10 @@ export default function WorkspacePage() {
       <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
 
       <aside className="desktop-sidebar" aria-label="侧栏">
-        <div className="brand-lockup">
+        <Link className="brand-lockup" href="/" aria-label="返回 Better Data 首页">
           <span className="brand-mark"><Database aria-hidden="true" /></span>
           <span><strong>Better Data</strong><small>本地数据工作台</small></span>
-        </div>
+        </Link>
         <nav className="sidebar-nav" aria-label="主导航">
           <p className="nav-section-label">工作区</p>
           <Link className="nav-item nav-item-active" href="/workspace" aria-current="page"><Home aria-hidden="true" />项目库</Link>
@@ -324,7 +334,7 @@ export default function WorkspacePage() {
 
       <div className="app-main">
         <header className="topbar">
-          <div className="mobile-brand"><span className="brand-mark"><Database aria-hidden="true" /></span><strong>Better Data</strong></div>
+          <Link className="mobile-brand" href="/" aria-label="返回 Better Data 首页"><span className="brand-mark"><Database aria-hidden="true" /></span><strong>Better Data</strong></Link>
           <div className="breadcrumb"><span>工作区</span><ChevronRight aria-hidden="true" /><strong>项目库</strong></div>
           <div className={`service-badge ${serviceCopy.className}`} role="status"><span className="service-dot" aria-hidden="true" />{serviceCopy.label}</div>
         </header>
@@ -427,6 +437,13 @@ export default function WorkspacePage() {
           <span>“{undoProject.name}”已移到回收站</span>
           <button type="button" onClick={() => void restoreProject(undoProject)}>撤销</button>
           <button type="button" aria-label="关闭提示" onClick={() => setUndoProject(null)}><X aria-hidden="true" /></button>
+        </div>
+      )}
+
+      {announcement && !undoProject && (
+        <div className="workspace-feedback" role="status">
+          <span>{announcement}</span>
+          <button type="button" aria-label="关闭提示" onClick={() => setAnnouncement("")}><X aria-hidden="true" /></button>
         </div>
       )}
 

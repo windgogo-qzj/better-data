@@ -120,11 +120,11 @@ def test_csv_with_semicolon_delimiter_is_detected(client: TestClient) -> None:
         ("empty.csv", b"", "CSV 文件为空"),
         ("blank-header.csv", b"name,,score\nA,x,1\n", "CSV 存在空表头"),
         ("duplicate-header.csv", b"name,name\nA,B\n", "CSV 存在重复表头"),
-        ("gbk.csv", "姓名,城市\n张三,上海\n".encode("gbk"), "CSV 必须使用 UTF-8"),
     ],
 )
-def test_invalid_csv_is_retained_with_clear_failed_record(
+def test_invalid_csv_is_rejected_without_a_broken_project(
     client: TestClient,
+    tmp_path: Path,
     filename: str,
     content: bytes,
     message: str,
@@ -135,11 +135,77 @@ def test_invalid_csv_is_retained_with_clear_failed_record(
         files={"dataset": (filename, content, "text/csv")},
     )
 
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
+    assert client.get("/api/projects").json() == []
+    assert [item.name for item in (tmp_path / "projects").iterdir()] == [
+        ".better-data-library.json"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "encoding_label"),
+    [
+        (
+            "western.csv",
+            "customer,city,amount\nAndré,Montréal,18\nAnaïs,Zürich,21\n".encode("windows-1252"),
+            "WINDOWS-1252",
+        ),
+        (
+            "chinese.csv",
+            "姓名,城市,分数\n张三,上海,91\n李四,北京,87\n".encode("gb18030"),
+            "GB18030",
+        ),
+    ],
+)
+def test_common_csv_encodings_create_ready_projects(
+    client: TestClient,
+    filename: str,
+    content: bytes,
+    encoding_label: str,
+) -> None:
+    response = client.post(
+        "/api/projects",
+        data={"name": "编码兼容", "task_type": "cleaning"},
+        files={"dataset": (filename, content, "text/csv")},
+    )
+
     assert response.status_code == 201
     record = response.json()
-    assert record["status"] == "failed"
-    assert message in record["error"]
-    assert record["profile"] is None
+    assert record["status"] == "ready"
+    assert any(encoding_label in warning for warning in record["profile"]["warnings"])
+
+
+def test_two_imports_then_trash_uses_canonical_library_state(client: TestClient) -> None:
+    first = client.post(
+        "/api/projects",
+        data={"name": "第一份", "task_type": "cleaning"},
+        files={"dataset": ("first.csv", b"name,value\nA,1\n", "text/csv")},
+    ).json()
+    second_response = client.post(
+        "/api/projects",
+        data={"name": "第二份", "task_type": "cleaning"},
+        files={
+            "dataset": (
+                "second.csv",
+                "name,city\nAndré,Montréal\n".encode("windows-1252"),
+                "text/csv",
+            )
+        },
+    )
+
+    assert second_response.status_code == 201
+    second = second_response.json()
+    assert second["status"] == "ready"
+    assert {item["id"] for item in client.get("/api/projects").json()} == {
+        first["id"],
+        second["id"],
+    }
+
+    assert client.delete(f"/api/projects/{first['id']}").status_code == 200
+    assert [item["id"] for item in client.get("/api/projects").json()] == [second["id"]]
+    assert [item["id"] for item in client.get("/api/trash").json()] == [first["id"]]
+    assert client.get(f"/api/projects/{second['id']}/analysis").status_code == 200
 
 
 def test_unsupported_extension_is_rejected_without_creating_project(

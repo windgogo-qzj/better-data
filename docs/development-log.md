@@ -429,7 +429,8 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 | Pull Request | [#20 重构品牌首页与引导式项目工作流](https://github.com/windgogo-qzj/better-data/pull/20) |
 | 分支 | `codex/frontend-guided-flow` |
 | 前端提交 | `b375c18 feat: 重构品牌首页与引导式工作流` |
-| 当前阶段 | PR #20 已通过首轮 GitHub Actions，等待合并 |
+| 合并提交 | `6fa5fde Merge pull request #20 from windgogo-qzj/codex/frontend-guided-flow` |
+| 当前阶段 | PR #20 已通过 GitHub Actions 并合并，Issue #19 已关闭 |
 
 ### 问题复核
 

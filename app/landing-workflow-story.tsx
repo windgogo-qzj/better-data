@@ -110,10 +110,9 @@ export function LandingWorkflowStory() {
 
   return (
     <section id="workflow" className="landing-story" aria-labelledby="workflow-title">
-      <div className="landing-story-heading">
-        <p className="landing-eyebrow">从检查到交付</p>
-        <h2 id="workflow-title">一次连续、透明的处理过程</h2>
-        <p>向下阅读，看看一份数据如何在你的确认下逐步变得可用。</p>
+      <div className="landing-story-intro">
+        <div><p className="landing-eyebrow">处理流程 · 05 个阶段</p><h2 id="workflow-title">从原始表格到可交付结果，<br />始终在同一条线上。</h2></div>
+        <p>滚动或选择步骤，左侧界面会同步展示当前状态。每次变化都有依据、有边界，也能回看。</p>
       </div>
 
       <div className="landing-story-layout">
@@ -139,14 +138,15 @@ export function LandingWorkflowStory() {
               <motion.li
                 key={stage.id}
                 className={selected ? "is-active" : ""}
+                tabIndex={0}
+                onClick={() => setActive(stage)}
+                onFocus={() => setActive(stage)}
                 onViewportEnter={() => setActive(stage)}
                 viewport={{ amount: 0.62 }}
               >
                 <span className="story-chapter-number">{stage.number}</span>
-                <Icon aria-hidden="true" />
-                <h3>{stage.title}</h3>
-                <p>{stage.description}</p>
-                <small>{stage.note}</small>
+                <span className="story-chapter-icon"><Icon aria-hidden="true" /></span>
+                <div><h3>{stage.title}</h3><p>{stage.description}</p><small>{stage.note}</small></div>
               </motion.li>
             );
           })}
@@ -156,9 +156,8 @@ export function LandingWorkflowStory() {
       <div className="landing-local-ledger">
         <div>
           <ShieldCheck aria-hidden="true" />
-          <p className="landing-eyebrow">本地优先</p>
-          <h2>数据不需要离开电脑</h2>
-          <p>Better Data 通过本地服务读取项目副本，不上传外部平台，也不会覆盖原始文件。</p>
+          <span><p className="landing-eyebrow">本地优先</p><h2>数据不需要离开电脑</h2></span>
+          <p>本地服务读取项目副本，不上传外部平台，也不会覆盖原始文件。</p>
         </div>
         <dl>
           <div><dt>外部数据传输</dt><dd>关闭</dd></div>

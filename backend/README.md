@@ -43,6 +43,10 @@ backend/
 | `GET` | `/api/projects` | 返回本机项目列表 |
 | `GET` | `/api/projects/{project_id}` | 返回单个项目详情 |
 | `POST` | `/api/projects` | 接收任务类型和数据文件，创建项目并执行初始画像 |
+| `DELETE` | `/api/projects/{project_id}` | 将非运行中的项目安全移入回收站 |
+| `GET` | `/api/trash` | 返回回收站中的项目列表 |
+| `POST` | `/api/trash/{project_id}/restore` | 将项目恢复到项目库 |
+| `DELETE` | `/api/trash/{project_id}` | 永久删除回收站项目及其本地文件 |
 | `GET` | `/api/projects/{project_id}/analysis` | 返回字段角色、质量评分、证据和处理建议 |
 | `PUT` | `/api/projects/{project_id}/fields` | 保存完整字段角色并重新计算分析 |
 | `PUT` | `/api/projects/{project_id}/recommendations` | 保存建议启停状态并阻止冲突组合 |
@@ -71,6 +75,8 @@ work/projects/<project-id>/
 ├─ exports/      # 导出包
 └─ logs/         # 操作与错误记录
 ```
+
+项目被移除时会完整移动到项目库同级的 `.trash/<project-id>/`，`project.json` 中记录移除时间。恢复时保留原项目 ID；如果项目库已存在同名 ID，服务端会拒绝覆盖。永久删除只接受严格的 32 位十六进制项目 ID，并再次校验目标目录位于 `.trash` 内。
 
 流水线成功后，`working/` 包含处理后的 `train.parquet`、`test.parquet`，同一划分的 `train-raw.parquet`、`test-raw.parquet`，以及 `target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
 

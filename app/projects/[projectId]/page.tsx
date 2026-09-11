@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
+  ArrowRight,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -49,13 +50,37 @@ const taskLabels: Record<string, string> = {
 
 const riskLabels = { low: "低风险", medium: "中风险", high: "高风险" } as const;
 
+const workflowSteps = [
+  { key: "overview", label: "数据概览", short: "画像" },
+  { key: "fields", label: "字段确认", short: "字段" },
+  { key: "quality", label: "质量诊断", short: "质量" },
+  { key: "plan", label: "处理方案", short: "方案" },
+  { key: "run", label: "执行处理", short: "执行" },
+  { key: "results", label: "结果导出", short: "结果" },
+] as const;
+
+type WorkflowStep = (typeof workflowSteps)[number]["key"];
+type ColumnProfile = {
+  name: string;
+  inferred_type: string;
+  missing_count: number;
+  unique_count: number;
+};
+
 type Project = {
   id: string;
   name: string;
   task_type: string;
   status: string;
   source_filename: string;
-  profile: { sampled_rows: number; is_sampled: boolean; column_count: number } | null;
+  profile: {
+    sampled_rows: number;
+    is_sampled: boolean;
+    column_count: number;
+    preview_rows: Array<Record<string, string | null>>;
+    columns: ColumnProfile[];
+    warnings: string[];
+  } | null;
 };
 
 type FieldRole = { name: string; role: string; inferred_type: string };
@@ -119,9 +144,13 @@ async function readJson(response: Response) {
   return payload;
 }
 
-export default function ProjectAnalysisPage() {
+export default function ProjectAnalysisPage({ requestedStep = "overview" }: { requestedStep?: string }) {
   const params = useParams<{ projectId: string }>();
   const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
+  const routeStep: WorkflowStep = workflowSteps.some((item) => item.key === requestedStep)
+    ? requestedStep as WorkflowStep
+    : "overview";
+  const stepIndex = workflowSteps.findIndex((item) => item.key === routeStep);
   const [project, setProject] = useState<Project | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [roles, setRoles] = useState<Record<string, string>>({});
@@ -183,6 +212,8 @@ export default function ProjectAnalysisPage() {
   const supervised = project?.task_type === "classification" || project?.task_type === "regression";
   const cleaning = project?.task_type === "cleaning";
   const clusteringPreview = project?.task_type === "clustering_prep";
+  const xlsxPreview = project?.source_filename.toLowerCase().endsWith(".xlsx") ?? false;
+  const executionPreview = clusteringPreview || xlsxPreview;
   const fieldValidation = supervised && targetCount !== 1
     ? `当前有 ${targetCount} 个目标列，分类和回归必须且只能选择 1 个。`
     : !supervised && targetCount > 0
@@ -295,7 +326,7 @@ export default function ProjectAnalysisPage() {
         <CircleAlert aria-hidden="true" />
         <h1>无法打开项目</h1>
         <p>{error ?? "项目不存在或尚未完成数据画像。"}</p>
-        <Button asChild variant="outline"><Link href="/">返回工作台</Link></Button>
+        <Button asChild variant="outline"><Link href="/workspace">返回项目库</Link></Button>
       </main>
     );
   }
@@ -305,7 +336,7 @@ export default function ProjectAnalysisPage() {
       <a className="skip-link" href="#analysis-main">跳到主要内容</a>
       <p className="sr-only" aria-live="polite" aria-atomic="true">{notice}</p>
       <header className="analysis-topbar">
-        <Link className="analysis-brand" href="/" aria-label="返回 Better Data 工作台">
+        <Link className="analysis-brand" href="/workspace" aria-label="返回 Better Data 项目库">
           <span className="brand-mark"><Database aria-hidden="true" /></span>
           <span><strong>Better Data</strong><small>本地数据工作台</small></span>
         </Link>
@@ -313,10 +344,10 @@ export default function ProjectAnalysisPage() {
       </header>
 
       <main id="analysis-main" className="analysis-main">
-        <Link className="back-link" href="/"><ArrowLeft aria-hidden="true" />返回项目库</Link>
+        <Link className="back-link" href="/workspace"><ArrowLeft aria-hidden="true" />返回项目库</Link>
         <section className="analysis-heading" aria-labelledby="project-title">
           <div>
-            <p className="panel-kicker">{taskLabels[project.task_type] ?? project.task_type} · 字段与质量确认</p>
+            <p className="panel-kicker">{taskLabels[project.task_type] ?? project.task_type} · {workflowSteps[stepIndex].label}</p>
             <h1 id="project-title">{project.name}</h1>
             <p>{project.source_filename} · {project.profile?.column_count ?? 0} 列 · 分析 {project.profile?.sampled_rows ?? 0} 行</p>
           </div>
@@ -326,19 +357,51 @@ export default function ProjectAnalysisPage() {
           </Badge>
         </section>
 
-        <ol className="analysis-steps" aria-label="项目进度">
-          <li data-state="complete"><Check aria-hidden="true" /><span><strong>上传与画像</strong><small>已完成</small></span></li>
-          <li data-state="current"><span>2</span><span><strong>字段确认</strong><small>当前步骤</small></span></li>
-          <li><span>3</span><span><strong>处理方案</strong><small>审阅建议</small></span></li>
-          <li><span>4</span><span><strong>执行与导出</strong><small>尚未开始</small></span></li>
-        </ol>
+        <nav className="workflow-nav" aria-label="项目处理步骤">
+          <ol>
+            {workflowSteps.map((item, index) => (
+              <li key={item.key} data-state={index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming"}>
+                <Link href={`/projects/${projectId}/${item.key}`} aria-current={index === stepIndex ? "step" : undefined}>
+                  <span className="workflow-step-number">{index < stepIndex ? <Check aria-hidden="true" /> : index + 1}</span>
+                  <span><strong>{item.label}</strong><small>{index === stepIndex ? "当前" : item.short}</small></span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </nav>
 
         {error && <div className="analysis-alert" role="alert"><CircleAlert aria-hidden="true" /><div><strong>无法保存</strong><p>{error}</p></div></div>}
+        {notice && <div className="analysis-success" role="status"><Check aria-hidden="true" /><p>{notice}</p></div>}
         {analysis.quality.sampled && (
           <div className="sample-notice"><TriangleAlert aria-hidden="true" /><p>当前评分和证据基于抽样画像，只用于方案确认；执行前仍会进行全量安全检查。</p></div>
         )}
 
-        <section className="analysis-section" aria-labelledby="quality-title">
+        {routeStep === "overview" && (
+          <section className="analysis-section overview-section" aria-labelledby="overview-title">
+            <div className="analysis-section-header">
+              <div><p className="panel-kicker">原始数据画像</p><h2 id="overview-title">先了解数据，再决定怎么处理</h2><p>这里只展示抽样画像，不会修改你上传的原始文件。</p></div>
+              <Button asChild><Link href={`/projects/${projectId}/fields`}>确认字段角色<ArrowRight aria-hidden="true" /></Link></Button>
+            </div>
+            <div className="overview-metrics">
+              <article><span>字段数量</span><strong>{project.profile?.column_count ?? 0}</strong><small>列</small></article>
+              <article><span>画像行数</span><strong>{project.profile?.sampled_rows ?? 0}</strong><small>{project.profile?.is_sampled ? "抽样" : "完整"}</small></article>
+              <article><span>质量总分</span><strong>{analysis.quality.total_score}</strong><small>/ 100</small></article>
+              <article><span>系统建议</span><strong>{analysis.recommendations.length}</strong><small>条</small></article>
+            </div>
+            {project.profile?.warnings && project.profile.warnings.length > 0 && (
+              <div className="overview-warnings"><TriangleAlert aria-hidden="true" /><div><strong>画像说明</strong>{project.profile.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div></div>
+            )}
+            <div className="preview-table-wrap">
+              <table className="preview-table">
+                <caption>原始数据前 {project.profile?.preview_rows.length ?? 0} 行预览</caption>
+                <thead><tr>{project.profile?.columns.map((column) => <th scope="col" key={column.name}>{column.name}<small>{column.inferred_type}</small></th>)}</tr></thead>
+                <tbody>{project.profile?.preview_rows.map((row, rowIndex) => <tr key={rowIndex}>{project.profile?.columns.map((column) => <td key={column.name}>{row[column.name] ?? <span className="missing-value">缺失</span>}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {routeStep === "quality" && <section className="analysis-section" aria-labelledby="quality-title">
           <div className="analysis-section-header">
             <div><p className="panel-kicker">六维诊断</p><h2 id="quality-title">数据质量评分</h2><p>总分用于快速比较，判断依据以各维扣分证据为准。</p></div>
             <div className="quality-total" aria-label={`综合质量分 ${analysis.quality.total_score} 分`}><strong>{analysis.quality.total_score}</strong><span>/ 100</span></div>
@@ -356,9 +419,9 @@ export default function ProjectAnalysisPage() {
               </article>
             ))}
           </div>
-        </section>
+        </section>}
 
-        <section className="analysis-section" aria-labelledby="fields-title">
+        {routeStep === "fields" && <section className="analysis-section" aria-labelledby="fields-title">
           <div className="analysis-section-header action-header">
             <div><p className="panel-kicker">人工确认点</p><h2 id="fields-title">字段角色</h2><p>系统提供初始推断；请明确目标列、ID、敏感和忽略字段。</p></div>
             <Button onClick={saveFields} disabled={Boolean(fieldValidation) || savingFields} aria-busy={savingFields}>
@@ -387,9 +450,9 @@ export default function ProjectAnalysisPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
 
-        <section className="analysis-section" aria-labelledby="rules-title">
+        {routeStep === "plan" && <section className="analysis-section" aria-labelledby="rules-title">
           <div className="analysis-section-header action-header">
             <div><p className="panel-kicker">可追溯规则</p><h2 id="rules-title">处理建议</h2><p>低风险建议可能默认开启；高风险和冲突项必须由你明确确认。</p></div>
             <Button onClick={saveRecommendations} disabled={savingRules} aria-busy={savingRules}>
@@ -419,18 +482,18 @@ export default function ProjectAnalysisPage() {
               })}
             </div>
           ) : <div className="analysis-empty"><Sparkles aria-hidden="true" /><p>当前抽样和字段配置没有触发处理建议。</p></div>}
-        </section>
+        </section>}
 
-        <section className="analysis-section" aria-labelledby="pipeline-title">
+        {routeStep === "run" && <section className="analysis-section" aria-labelledby="pipeline-title">
           <div className="analysis-section-header action-header">
             <div><p className="panel-kicker">{cleaning ? "完整数据处理" : "训练集拟合边界"}</p><h2 id="pipeline-title">基础预处理流水线</h2><p>{cleaning ? "不划分数据，使用完整数据完成基础清洗、类别处理与缩放。" : clusteringPreview ? "聚类预处理执行与诊断将在 Beta 阶段提供。" : "先划分，再仅用训练集学习填充值、类别词表、缩放参数和常量特征。"}</p></div>
-            <Button onClick={runPipeline} disabled={clusteringPreview || !analysis.fields_confirmed || Boolean(fieldValidation) || fieldsDirty || rulesDirty || runningPipeline} aria-busy={runningPipeline}>
+            <Button onClick={runPipeline} disabled={executionPreview || !analysis.fields_confirmed || Boolean(fieldValidation) || fieldsDirty || rulesDirty || runningPipeline} aria-busy={runningPipeline}>
               {runningPipeline ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
               {runningPipeline ? "正在处理" : pipelineRun ? "重新运行" : "运行预处理"}
             </Button>
           </div>
           <div className="leakage-note"><ShieldCheck aria-hidden="true" /><div><strong>{cleaning ? "原始数据保护" : "防泄漏保证"}</strong><p>{cleaning ? "不修改 source 原始文件；完整数据的清洗状态和结果写入独立工作文件。" : "测试集不参与统计参数学习；新类别进入独立 unknown 特征；目标缺失行单独保存。"}</p></div></div>
-          {clusteringPreview && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />聚类模式当前可完成画像、字段确认和建议审阅，执行与评估属于 Beta。</p>}
+          {executionPreview && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />{xlsxPreview ? "XLSX 当前可完成画像、字段确认和建议审阅；请转换为 CSV 后再执行预处理。" : "聚类模式当前可完成画像、字段确认和建议审阅，执行与评估属于 Beta。"}</p>}
           {(fieldsDirty || rulesDirty || !analysis.fields_confirmed) && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />{!analysis.fields_confirmed ? "请先保存并确认字段角色。" : "字段或建议有未保存更改，请保存后再运行。"}</p>}
           <div className="pipeline-config-grid">
             {!cleaning && <label><span>测试集比例</span><select value={pipelineConfig.test_size} onChange={(event) => setPipelineConfig((current) => ({ ...current, test_size: Number(event.target.value) }))}><option value={0.2}>20%（推荐）</option><option value={0.25}>25%</option><option value={0.3}>30%</option></select></label>}
@@ -448,17 +511,17 @@ export default function ProjectAnalysisPage() {
               <p>评估、CSV 和 HTML 报告将在结果阶段生成；当前文件保存在项目 working 目录。</p>
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="analysis-section" aria-labelledby="results-title">
+        {routeStep === "results" && <section className="analysis-section" aria-labelledby="results-title">
           <div className="analysis-section-header action-header">
             <div><p className="panel-kicker">{cleaning ? "完整结果" : "同一划分对比"}</p><h2 id="results-title">{cleaning ? "清洗结果与导出" : "快速评估与导出"}</h2><p>{cleaning ? "纯清洗不运行模型评估，生成一份完整 CSV 和离线报告。" : "分类使用逻辑回归，回归使用 Ridge；也可以关闭评估，只生成数据和报告。"}</p></div>
-            <Button onClick={createEvaluation} disabled={!pipelineRun || evaluating} aria-busy={evaluating}>
+            <Button onClick={createEvaluation} disabled={executionPreview || !pipelineRun || evaluating} aria-busy={evaluating}>
               {evaluating ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <BarChart3 aria-hidden="true" />}
               {evaluating ? "正在生成" : evaluation ? "重新生成" : "生成结果"}
             </Button>
           </div>
-          {!pipelineRun && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />请先完成基础预处理，再生成评估与导出结果。</p>}
+          {executionPreview ? <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />{xlsxPreview ? "XLSX 项目当前仅支持分析预览，暂不能生成处理结果。" : "聚类模式的执行、评估与导出将在 Beta 阶段开放。"}</p> : !pipelineRun && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />请先完成基础预处理，再生成评估与导出结果。</p>}
           <fieldset className="evaluation-mode"><legend>{cleaning ? "输出方式" : "评估档位"}</legend>{!cleaning && <label data-active={evaluationMode === "quick"}><input type="radio" name="evaluation-mode" value="quick" checked={evaluationMode === "quick"} onChange={() => setEvaluationMode("quick")} /><span><strong>快速</strong><small>对比最低限度兼容方案与完整方案</small></span></label>}<label data-active={evaluationMode === "off"}><input type="radio" name="evaluation-mode" value="off" checked={evaluationMode === "off"} onChange={() => setEvaluationMode("off")} /><span><strong>{cleaning ? "生成完整结果" : "关闭"}</strong><small>{cleaning ? "导出一份处理后 CSV 和离线报告" : "只生成 CSV、报告和运行记录"}</small></span></label></fieldset>
           {evaluation && (
             <div className="evaluation-result">
@@ -473,7 +536,12 @@ export default function ProjectAnalysisPage() {
               </div>
             </div>
           )}
-        </section>
+        </section>}
+
+        <nav className="workflow-footer" aria-label="上一步和下一步">
+          {stepIndex > 0 ? <Link href={`/projects/${projectId}/${workflowSteps[stepIndex - 1].key}`}><ArrowLeft aria-hidden="true" />{workflowSteps[stepIndex - 1].label}</Link> : <span />}
+          {stepIndex < workflowSteps.length - 1 && <Link href={`/projects/${projectId}/${workflowSteps[stepIndex + 1].key}`}>{workflowSteps[stepIndex + 1].label}<ArrowRight aria-hidden="true" /></Link>}
+        </nav>
       </main>
     </div>
   );

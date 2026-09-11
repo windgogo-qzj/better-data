@@ -6,8 +6,11 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `page.tsx` | 首页工作台、项目列表、项目库设置、文件选择、任务类型和创建项目交互 |
-| `projects/[projectId]/page.tsx` | 项目字段确认、质量建议、安全预处理、快速评估和结果下载工作台 |
+| `page.tsx` | 纯展示品牌首页与进入产品的唯一入口 |
+| `workspace/page.tsx` | 项目列表、项目库设置与系统状态工作台 |
+| `projects/new/page.tsx` | 独立的数据文件选择、任务配置、导入状态和错误反馈流程 |
+| `projects/[projectId]/page.tsx` | 旧项目地址的兼容入口，转到项目数据概览 |
+| `projects/[projectId]/[step]/page.tsx` | 概览、字段、质量、方案、执行和结果分阶段页面 |
 | `layout.tsx` | 全局 HTML 结构、中文语言属性、Metadata 和 favicon |
 | `globals.css` | 设计 Token、全局样式、响应式布局和可访问状态 |
 | `chatgpt-auth.ts` | 脚手架预留的认证辅助函数；当前产品不登录，主流程没有调用 |

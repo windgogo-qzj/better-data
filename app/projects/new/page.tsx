@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ProjectJourney } from "../project-journey";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -111,23 +112,18 @@ export default function NewProjectPage() {
       </header>
 
       <main id="new-project-main" className="new-project-main">
-        <nav className="new-project-progress" aria-label="新建项目进度">
-          <span data-state="current"><b>1</b><small>导入与配置</small></span>
-          <i aria-hidden="true" />
-          <span><b>2</b><small>数据概览</small></span>
-          <i aria-hidden="true" />
-          <span><b>3</b><small>字段确认</small></span>
-        </nav>
+        <ProjectJourney current="create" />
 
         <div className="new-project-heading">
-          <p className="panel-kicker">新建数据项目</p>
-          <h1>选择数据并确定处理目标</h1>
-          <p>文件将在本机复制并生成结构画像。创建成功后会自动进入数据概览。</p>
+          <p className="new-project-stage">01 / 07 · 创建项目</p>
+          <h1>从一份数据开始</h1>
+          <p>选择本机文件并说明处理目标。创建后，流程会连续进入数据概览。</p>
         </div>
 
         <form className="new-project-form" onSubmit={createProject} aria-busy={creationState === "creating"}>
-          <section className="new-project-card" aria-labelledby="file-section-title">
-            <div className="new-project-card-heading"><span>01</span><div><h2 id="file-section-title">选择数据文件</h2><p>先检查格式和大小，不会修改原文件。</p></div></div>
+          <div className="new-project-canvas">
+          <section className="new-project-section new-project-source" aria-labelledby="file-section-title">
+            <div className="new-project-card-heading"><span>数据源</span><div><h2 id="file-section-title">选择数据文件</h2><p>先检查格式和大小，原始文件始终只读保存。</p></div></div>
             <button
               className="new-project-dropzone"
               type="button"
@@ -157,8 +153,8 @@ export default function NewProjectPage() {
             {xlsxPreview && !fileIssue && <div className="new-project-boundary status-info"><Info aria-hidden="true" /><div><strong>XLSX 仅支持预览分析</strong><p>可以查看结构、字段和质量建议，但当前版本不能执行预处理。需要完整处理时，请先另存为 CSV。</p></div></div>}
           </section>
 
-          <section className="new-project-card" aria-labelledby="task-section-title">
-            <div className="new-project-card-heading"><span>02</span><div><h2 id="task-section-title">选择任务类型</h2><p>系统会根据目标调整字段规则、划分方式和评估方法。</p></div></div>
+          <section className="new-project-section new-project-goal" aria-labelledby="task-section-title">
+            <div className="new-project-card-heading"><span>处理目标</span><div><h2 id="task-section-title">这份数据要用于什么</h2><p>目标决定字段规则、数据划分和评估方法。</p></div></div>
             <fieldset className="new-project-task-fieldset">
               <legend className="sr-only">任务类型</legend>
               <div className="task-grid">
@@ -176,6 +172,7 @@ export default function NewProjectPage() {
               </div>
             </fieldset>
           </section>
+          </div>
 
           {submitError && <div className="new-project-submit-message status-error" role="alert"><Info aria-hidden="true" /><div><strong>项目创建失败</strong><p>{submitError}</p></div></div>}
           {creationState === "creating" && (
@@ -192,8 +189,8 @@ export default function NewProjectPage() {
           )}
 
           <div className="new-project-actions">
-            <div className="new-project-privacy"><ShieldCheck aria-hidden="true" /><span>原始文件只读保存，不上传外部服务</span></div>
-            <div><Link className="new-project-cancel" href="/workspace" aria-disabled={creationState !== "idle"}>取消</Link><Button type="submit" disabled={!selectedFile || Boolean(fileIssue) || creationState !== "idle"} aria-busy={creationState === "creating"}>{creationState === "creating" && <LoaderCircle className="animate-spin" aria-hidden="true" />}{previewOnly ? "创建预览项目" : "创建并开始检查"}</Button></div>
+            <div className="new-project-privacy"><ShieldCheck aria-hidden="true" /><span>仅在本机处理 · 原始文件只读</span></div>
+            <div><Link className="new-project-cancel" href="/workspace" aria-disabled={creationState !== "idle"}>取消</Link><Button type="submit" disabled={!selectedFile || Boolean(fileIssue) || creationState !== "idle"} aria-busy={creationState === "creating"}>{creationState === "creating" && <LoaderCircle className="animate-spin" aria-hidden="true" />}{previewOnly ? "创建预览项目" : "创建并查看概览"}</Button></div>
           </div>
         </form>
       </main>

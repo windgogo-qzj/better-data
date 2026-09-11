@@ -23,6 +23,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProjectJourney } from "../project-journey";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -354,9 +355,9 @@ export default function ProjectAnalysisPage({ requestedStep }: { requestedStep?:
         <Link className="back-link" href="/workspace"><ArrowLeft aria-hidden="true" />返回项目库</Link>
         <section className="analysis-heading" aria-labelledby="project-title">
           <div>
-            <p className="panel-kicker">{taskLabels[project.task_type] ?? project.task_type} · {workflowSteps[stepIndex].label}</p>
+            <p className="analysis-stage">{String(stepIndex + 2).padStart(2, "0")} / 07 · {workflowSteps[stepIndex].label}</p>
             <h1 id="project-title">{project.name}</h1>
-            <p>{project.source_filename} · {project.profile?.column_count ?? 0} 列 · 分析 {project.profile?.sampled_rows ?? 0} 行</p>
+            <p>{taskLabels[project.task_type] ?? project.task_type} · {project.source_filename} · {project.profile?.column_count ?? 0} 列 · 分析 {project.profile?.sampled_rows ?? 0} 行</p>
           </div>
           <Badge className={analysis.fields_confirmed ? "status-success" : "status-warning"}>
             {analysis.fields_confirmed ? <Check aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
@@ -364,18 +365,7 @@ export default function ProjectAnalysisPage({ requestedStep }: { requestedStep?:
           </Badge>
         </section>
 
-        <nav className="workflow-nav" aria-label="项目处理步骤">
-          <ol>
-            {workflowSteps.map((item, index) => (
-              <li key={item.key} data-state={index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming"}>
-                <Link href={`/projects/${projectId}/${item.key}`} aria-current={index === stepIndex ? "step" : undefined}>
-                  <span className="workflow-step-number">{index < stepIndex ? <Check aria-hidden="true" /> : index + 1}</span>
-                  <span><strong>{item.label}</strong><small>{index === stepIndex ? "当前" : item.short}</small></span>
-                </Link>
-              </li>
-            ))}
-          </ol>
-        </nav>
+        <ProjectJourney current={routeStep} projectId={projectId} />
 
         {error && <div className="analysis-alert" role="alert"><CircleAlert aria-hidden="true" /><div><strong>无法保存</strong><p>{error}</p></div></div>}
         {notice && <div className="analysis-success" role="status"><Check aria-hidden="true" /><p>{notice}</p></div>}

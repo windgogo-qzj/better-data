@@ -58,6 +58,49 @@ def test_create_csv_project_streams_source_and_returns_profile(
     assert [item["id"] for item in listed.json()] == [record["id"]]
 
 
+def test_project_trash_restore_and_permanent_delete(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    created = client.post(
+        "/api/projects",
+        data={"name": "可恢复项目", "task_type": "cleaning"},
+        files={"dataset": ("source.csv", b"name,score\nA,1\n", "text/csv")},
+    ).json()
+    project_id = created["id"]
+    original = tmp_path / "projects" / project_id
+    trashed = tmp_path / "projects" / ".trash" / project_id
+
+    moved = client.delete(f"/api/projects/{project_id}")
+    assert moved.status_code == 200
+    assert moved.json()["id"] == project_id
+    assert moved.json()["trashed_at"]
+    assert not original.exists()
+    assert trashed.is_dir()
+    assert client.get("/api/projects").json() == []
+    assert [item["id"] for item in client.get("/api/trash").json()] == [project_id]
+
+    restored = client.post(f"/api/trash/{project_id}/restore")
+    assert restored.status_code == 200
+    assert restored.json()["id"] == project_id
+    assert original.is_dir()
+    assert not trashed.exists()
+
+    assert client.delete(f"/api/projects/{project_id}").status_code == 200
+    deleted = client.delete(f"/api/trash/{project_id}")
+    assert deleted.status_code == 204
+    assert not trashed.exists()
+    assert client.get("/api/trash").json() == []
+
+
+def test_project_delete_rejects_invalid_or_missing_identifiers(client: TestClient) -> None:
+    invalid = client.delete("/api/projects/not-a-project")
+    missing = client.delete(f"/api/trash/{'0' * 32}")
+
+    assert invalid.status_code == 404
+    assert missing.status_code == 404
+
+
 def test_csv_with_semicolon_delimiter_is_detected(client: TestClient) -> None:
     response = client.post(
         "/api/projects",

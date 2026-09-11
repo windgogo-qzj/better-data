@@ -44,12 +44,16 @@ def build_evaluation_and_exports(
     project_root: Path,
     mode: EvaluationMode,
 ) -> EvaluationRecord:
+    if project.task_type == TaskType.CLEANING:
+        return _build_cleaning_exports(project, analysis, pipeline_run, project_root, mode)
     working = project_root / "working"
     raw_train = _read_required_parquet(working / "train-raw.parquet")
     raw_test = _read_required_parquet(working / "test-raw.parquet")
     complete_train = _read_required_parquet(working / "train.parquet")
     complete_test = _read_required_parquet(working / "test.parquet")
     target = pipeline_run.target_column
+    if target is None:
+        raise ValueError("监督学习评估缺少目标列记录")
     if raw_train.height != complete_train.height or raw_test.height != complete_test.height:
         raise ValueError("原始与处理后划分行数不一致，无法进行公平评估")
     if raw_train.get_column(target).to_list() != complete_train.get_column(target).to_list():
@@ -115,6 +119,7 @@ def build_evaluation_and_exports(
         same_split=True,
         train_rows=complete_train.height,
         test_rows=complete_test.height,
+        full_rows=0,
         baseline=baseline_scores,
         complete=complete_scores,
         artifacts=artifacts,
@@ -125,6 +130,52 @@ def build_evaluation_and_exports(
     )
     _write_json_atomic(result_json, partial.model_dump(mode="json"))
     return partial
+
+
+def _build_cleaning_exports(
+    project: ProjectRecord,
+    analysis: ProjectAnalysis,
+    pipeline_run: PipelineRunRecord,
+    project_root: Path,
+    mode: EvaluationMode,
+) -> EvaluationRecord:
+    if mode != EvaluationMode.OFF:
+        raise ValueError("纯数据清洗不运行模型评估，请选择关闭档")
+    processed = _read_required_parquet(project_root / "working" / "processed.parquet")
+    if processed.height != pipeline_run.full_rows:
+        raise ValueError("清洗工作文件与运行记录行数不一致")
+    exports = project_root / "exports"
+    reports = project_root / "reports"
+    results = project_root / "results"
+    for directory in (exports, reports, results):
+        directory.mkdir(parents=True, exist_ok=True)
+    processed_csv = exports / "processed.csv"
+    report_html = reports / "report.html"
+    result_json = results / "evaluation.json"
+    _write_csv_atomic(processed_csv, processed)
+    record = EvaluationRecord(
+        project_id=project.id,
+        source_sha256=project.source_sha256,
+        created_at=datetime.now(UTC),
+        mode=EvaluationMode.OFF,
+        task_type=project.task_type,
+        random_seed=pipeline_run.config.random_seed,
+        same_split=False,
+        train_rows=0,
+        test_rows=0,
+        full_rows=processed.height,
+        artifacts={
+            "processed_csv": _export_artifact(
+                project.id, project_root, processed_csv, "processed-csv"
+            )
+        },
+    )
+    _write_text_atomic(report_html, _render_report(project, analysis, pipeline_run, record))
+    record.artifacts["report_html"] = _export_artifact(
+        project.id, project_root, report_html, "report"
+    )
+    _write_json_atomic(result_json, record.model_dump(mode="json"))
+    return record
 
 
 def _minimal_baseline(
@@ -259,13 +310,28 @@ def _render_report(
         for item in analysis.recommendations
         if item.id in pipeline.applied_recommendation_ids
     ) or "<li>没有启用规则建议</li>"
+    row_summary = (
+        f"完整数据 {evaluation.full_rows} 行"
+        if project.task_type == TaskType.CLEANING
+        else f"训练 / 测试 {evaluation.train_rows} / {evaluation.test_rows}"
+    )
+    comparison_note = (
+        "纯数据清洗不运行模型评估，本报告记录全量处理方案与导出结果。"
+        if project.task_type == TaskType.CLEANING
+        else "两个方案使用完全相同的训练集、测试集、目标列和随机种子。结果仅作为预处理效果的快速参考。"
+    )
+    score_sections = (
+        score_cards(evaluation.baseline) + score_cards(evaluation.complete)
+        if evaluation.baseline or evaluation.complete
+        else '<p class="muted">本次未运行模型评估。</p>'
+    )
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
 <title>{html.escape(project.name)} · Better Data 报告</title><style>
 :root{{--ink:#172554;--muted:#475569;--primary:#1e40af;--line:#cbd5e1;--soft:#eff6ff;--ok:#047857}}*{{box-sizing:border-box}}body{{margin:0;background:#f8fafc;color:var(--ink);font:16px/1.65 "Segoe UI","Microsoft YaHei UI",sans-serif}}main{{width:min(960px,calc(100% - 32px));margin:32px auto}}header,.block{{margin-bottom:16px;border:1px solid #e2e8f0;border-radius:12px;background:white;padding:24px}}h1{{margin:4px 0;font-size:28px}}h2{{margin:0 0 16px;font-size:20px}}h3{{margin:0 0 12px;font-size:16px}}p{{margin:8px 0}}.eyebrow,small,.muted{{color:var(--muted)}}.eyebrow{{font-size:13px;font-weight:700}}.summary,.metrics,.quality{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}}.summary div,.metric,.quality li{{border-radius:8px;background:var(--soft);padding:12px}}.summary span,.metric span,.quality span{{display:block;color:var(--muted);font-size:12px}}.summary strong,.metric strong,.quality strong{{font-family:Consolas,monospace;font-size:18px}}.schemes{{display:grid;gap:12px}}.scheme{{border:1px solid var(--line);border-radius:8px;padding:16px}}.quality{{margin:0;padding:0;list-style:none}}.quality li{{display:flex;justify-content:space-between}}code{{color:var(--primary)}}footer{{color:var(--muted);font-size:12px;text-align:center}}@media print{{body{{background:white}}main{{width:100%;margin:0}}header,.block{{break-inside:avoid}}}}
-</style></head><body><main><header><p class="eyebrow">BETTER DATA · 本地离线报告</p><h1>{html.escape(project.name)}</h1><p>{html.escape(project.source_filename)}</p><div class="summary"><div><span>任务</span><strong>{html.escape(project.task_type.value)}</strong></div><div><span>训练 / 测试</span><strong>{evaluation.train_rows} / {evaluation.test_rows}</strong></div><div><span>随机种子</span><strong>{evaluation.random_seed}</strong></div><div><span>输入 SHA-256</span><small>{html.escape(project.source_sha256)}</small></div></div></header>
-<section class="block"><h2>快速评估</h2><p class="muted">两个方案使用完全相同的训练集、测试集、目标列和随机种子。结果仅作为预处理效果的快速参考。</p><div class="schemes">{score_cards(evaluation.baseline)}{score_cards(evaluation.complete)}</div></section>
+</style></head><body><main><header><p class="eyebrow">BETTER DATA · 本地离线报告</p><h1>{html.escape(project.name)}</h1><p>{html.escape(project.source_filename)}</p><div class="summary"><div><span>任务</span><strong>{html.escape(project.task_type.value)}</strong></div><div><span>数据范围</span><strong>{row_summary}</strong></div><div><span>随机种子</span><strong>{evaluation.random_seed}</strong></div><div><span>输入 SHA-256</span><small>{html.escape(project.source_sha256)}</small></div></div></header>
+<section class="block"><h2>{'处理结果' if project.task_type == TaskType.CLEANING else '快速评估'}</h2><p class="muted">{comparison_note}</p><div class="schemes">{score_sections}</div></section>
 <section class="block"><h2>六维质量评分</h2><ul class="quality">{dimensions}</ul><p class="muted">综合分 {analysis.quality.total_score}/100；{'基于抽样画像' if analysis.quality.sampled else '基于当前画像范围'}。</p></section>
 <section class="block"><h2>已应用建议</h2><ul>{applied}</ul></section>
 <section class="block"><h2>可复现信息</h2><p>流水线配置版本 {pipeline.config.schema_version}，状态版本 {pipeline.schema_version}，类别新值映射到 unknown 特征。训练参数只从训练集学习。</p></section>

@@ -188,12 +188,13 @@ class PipelineRunRecord(BaseModel):
     source_sha256: str
     created_at: datetime
     config: PipelineConfig
-    target_column: str
+    target_column: str | None
     feature_columns: list[str]
     output_feature_columns: list[str]
     applied_recommendation_ids: list[str]
     train_rows: int
     test_rows: int
+    full_rows: int = 0
     target_missing_rows: int
     stratified: bool
     learned_parameters: dict[str, dict[str, object]]
@@ -233,6 +234,7 @@ class EvaluationRecord(BaseModel):
     same_split: bool
     train_rows: int
     test_rows: int
+    full_rows: int = 0
     baseline: EvaluationScores | None = None
     complete: EvaluationScores | None = None
     artifacts: dict[str, ExportArtifact]

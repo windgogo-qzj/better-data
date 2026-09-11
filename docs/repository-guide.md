@@ -150,6 +150,7 @@ backend/
 | 修改项目目录与元数据 | `services/project_store.py` | `config.py`、`models.py`、测试 |
 | 修改字段推断、评分或建议规则 | `services/analysis.py` | `models.py`、项目分析 API 测试、需求阈值 |
 | 修改划分、填充、编码或缩放 | `services/pipeline.py` | `models.py`、防泄漏测试、项目分析页 |
+| 修改纯清洗完整数据流程 | `services/pipeline.py` | `services/evaluation.py`、清洗闭环测试、项目分析页 |
 | 修改评估指标、报告或导出 | `services/evaluation.py` | `models.py`、下载 API、离线报告测试 |
 | 调整 CI | `.github/workflows/ci.yml` | `package.json`、`pyproject.toml` |
 | 记录架构取舍 | `docs/decisions/` | `docs/architecture.md` |

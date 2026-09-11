@@ -48,12 +48,14 @@ def run_preprocessing_pipeline(
     working_dir: Path,
     config: PipelineConfig,
 ) -> PipelineRunRecord:
-    if project.task_type not in {TaskType.CLASSIFICATION, TaskType.REGRESSION}:
-        raise ValueError("MVP 安全流水线仅支持分类和回归任务")
     if not analysis.fields_confirmed:
         raise ValueError("请先确认字段角色，再运行预处理流水线")
     if source_path.suffix.lower() != ".csv":
         raise ValueError("MVP 安全流水线当前仅支持 CSV；XLSX 全量处理将在 Beta 提供")
+    if project.task_type == TaskType.CLEANING:
+        return _run_cleaning_pipeline(project, analysis, source_path, working_dir, config)
+    if project.task_type not in {TaskType.CLASSIFICATION, TaskType.REGRESSION}:
+        raise ValueError("聚类预处理执行将在 Beta 提供")
 
     target_fields = [field for field in analysis.fields if field.role == ColumnRole.TARGET]
     if len(target_fields) != 1:
@@ -202,11 +204,112 @@ def run_preprocessing_pipeline(
         applied_recommendation_ids=sorted(item.id for item in enabled_recommendations),
         train_rows=train_result.height,
         test_rows=test_result.height,
+        full_rows=0,
         target_missing_rows=target_missing.height,
         stratified=stratify_values is not None,
         learned_parameters=learned,
         test_unknown_categories=unknown_counts,
         artifacts=artifacts,
+    )
+    _write_json_atomic(state_path, record.model_dump(mode="json"))
+    return record
+
+
+def _run_cleaning_pipeline(
+    project: ProjectRecord,
+    analysis: ProjectAnalysis,
+    source_path: Path,
+    working_dir: Path,
+    config: PipelineConfig,
+) -> PipelineRunRecord:
+    if any(field.role == ColumnRole.TARGET for field in analysis.fields):
+        raise ValueError("纯数据清洗不使用目标列")
+    enabled_recommendations = [item for item in analysis.recommendations if item.enabled]
+    excluded_by_rule = {
+        item.column
+        for item in enabled_recommendations
+        if item.column and item.action in {"remove_column", "exclude_feature"}
+    }
+    indicator_fields = {
+        item.column
+        for item in enabled_recommendations
+        if item.column and item.action == "add_missing_indicator"
+    }
+    feature_fields = [
+        field
+        for field in analysis.fields
+        if field.role not in EXCLUDED_ROLES and field.name not in excluded_by_rule
+    ]
+    unsupported = [
+        field.name
+        for field in feature_fields
+        if field.role not in NUMERIC_ROLES | CATEGORICAL_ROLES
+    ]
+    if unsupported:
+        raise ValueError(f"MVP 流水线暂不支持这些字段角色：{', '.join(unsupported)}")
+    if not feature_fields:
+        raise ValueError("没有可用于清洗的字段")
+
+    frame = _read_csv(source_path)
+    if set(frame.columns) != {field.name for field in analysis.fields}:
+        raise ValueError("源文件结构与已确认字段不一致，请重新导入项目")
+    if config.drop_duplicates:
+        frame = frame.unique(maintain_order=True)
+    empty = frame.head(0)
+    output_columns: dict[str, pl.Series] = {}
+    empty_columns: dict[str, pl.Series] = {}
+    learned: dict[str, dict[str, object]] = {}
+    unknown_counts: dict[str, int] = {}
+    output_features: list[str] = []
+    for field in feature_fields:
+        if field.role in NUMERIC_ROLES:
+            _transform_numeric(
+                field, frame, empty, config, output_columns, empty_columns, learned, output_features
+            )
+        else:
+            _transform_categorical(
+                field,
+                frame,
+                empty,
+                config,
+                output_columns,
+                empty_columns,
+                learned,
+                unknown_counts,
+                output_features,
+            )
+        if field.name in indicator_fields:
+            indicator_name = f"{field.name}__is_missing"
+            output_columns[indicator_name] = frame.get_column(field.name).is_null().cast(pl.Int8).rename(indicator_name)
+            output_features.append(indicator_name)
+            learned.setdefault(field.name, {})["missing_indicator"] = indicator_name
+    if not output_features:
+        raise ValueError("清洗拟合后没有保留下来的字段")
+    if len(output_features) != len(set(output_features)):
+        raise ValueError("处理后的字段名称发生冲突，请调整原始字段名后重新导入")
+
+    result = pl.DataFrame(output_columns)
+    working_dir.mkdir(parents=True, exist_ok=True)
+    processed_path = working_dir / "processed.parquet"
+    state_path = working_dir / "pipeline-state.json"
+    _write_parquet_atomic(processed_path, result)
+    record = PipelineRunRecord(
+        project_id=project.id,
+        source_sha256=project.source_sha256,
+        created_at=datetime.now(UTC),
+        config=config,
+        target_column=None,
+        feature_columns=[field.name for field in feature_fields],
+        output_feature_columns=output_features,
+        applied_recommendation_ids=sorted(item.id for item in enabled_recommendations),
+        train_rows=0,
+        test_rows=0,
+        full_rows=result.height,
+        target_missing_rows=0,
+        stratified=False,
+        learned_parameters=learned,
+        test_unknown_categories={},
+        artifacts={"processed": _artifact(working_dir, processed_path, result)},
     )
     _write_json_atomic(state_path, record.model_dump(mode="json"))
     return record

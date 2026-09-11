@@ -50,7 +50,7 @@ backend/
 | `GET` | `/api/projects/{project_id}/pipeline-runs/latest` | 返回最近一次流水线配置、学习状态和内部文件摘要 |
 | `POST` | `/api/projects/{project_id}/evaluation` | 生成快速评估、CSV 和离线 HTML 报告 |
 | `GET` | `/api/projects/{project_id}/evaluation` | 返回最近一次评估与导出清单 |
-| `GET` | `/api/projects/{project_id}/artifacts/{artifact_name}` | 从固定白名单下载训练集、测试集或报告 |
+| `GET` | `/api/projects/{project_id}/artifacts/{artifact_name}` | 从固定白名单下载结果 CSV 或离线报告 |
 | `GET` | `/api/settings/project-library` | 返回项目库路径、可写状态、项目数和首次设置状态 |
 | `PUT` | `/api/settings/project-library` | 验证并保存新的项目库绝对路径 |
 | `GET` | `/api/docs` | FastAPI 自动生成的本地接口文档 |
@@ -73,6 +73,8 @@ work/projects/<project-id>/
 ```
 
 流水线成功后，`working/` 包含处理后的 `train.parquet`、`test.parquet`，同一划分的 `train-raw.parquet`、`test-raw.parquet`，以及 `target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
+
+纯数据清洗不划分训练集和测试集，结果写入 `working/processed.parquet`，再由结果接口生成 `exports/processed.csv` 与离线报告。聚类预处理执行属于 Beta，MVP 只允许完成画像、字段确认和建议审阅。
 
 `work/` 包含用户数据，已被 Git 忽略。不要把其中内容复制进测试、Issue 或 Pull Request。
 

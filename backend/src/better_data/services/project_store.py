@@ -277,6 +277,7 @@ class ProjectStore:
         allowed = {
             "train-csv": (project_root / "exports" / "train.csv", "train.csv"),
             "test-csv": (project_root / "exports" / "test.csv", "test.csv"),
+            "processed-csv": (project_root / "exports" / "processed.csv", "processed.csv"),
             "report": (project_root / "reports" / "report.html", "better-data-report.html"),
         }
         if artifact_name not in allowed:
@@ -308,6 +309,7 @@ class ProjectStore:
             project_root / "working" / "train-raw.parquet",
             project_root / "working" / "test-raw.parquet",
             project_root / "working" / "target-missing.parquet",
+            project_root / "working" / "processed.parquet",
         ):
             path.unlink(missing_ok=True)
         self._invalidate_results(project_root)
@@ -323,6 +325,7 @@ class ProjectStore:
             project_root / "reports" / "report.html",
             project_root / "exports" / "train.csv",
             project_root / "exports" / "test.csv",
+            project_root / "exports" / "processed.csv",
         ):
             path.unlink(missing_ok=True)
 

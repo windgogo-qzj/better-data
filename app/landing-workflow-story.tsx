@@ -191,9 +191,11 @@ export function LandingWorkflowStory() {
       event.stopPropagation();
       lastSectionSnapAt.current = now;
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      (movingDownFromHero ? workflow : hero).scrollIntoView({
+      const target = movingDownFromHero ? workflow : hero;
+      const targetTop = window.scrollY + target.getBoundingClientRect().top;
+      window.scrollTo({
+        top: Math.round(targetTop),
         behavior: reduceMotion ? "auto" : "smooth",
-        block: "start",
       });
     }
 

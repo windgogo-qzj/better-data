@@ -182,7 +182,8 @@
   outline: none;
   background: #e7eaee;
   color: #0d1b38;
-  scroll-margin-top: 0;
+  /* Cancel the app-wide anchor offset: this fullscreen section has no fixed header. */
+  scroll-margin-top: -5.5rem;
 }
 
 .workflow-v3-stage:focus-visible {

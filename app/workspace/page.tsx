@@ -25,7 +25,6 @@ import {
 
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -120,6 +119,13 @@ function projectStatus(status: string) {
   return { label: status, className: "status-neutral" };
 }
 
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof TypeError || (error instanceof Error && /failed to fetch/i.test(error.message))) {
+    return "无法连接本地处理服务，请确认服务仍在运行后重试。";
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -134,6 +140,7 @@ export default function WorkspacePage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ project: ProjectSummary; permanent: boolean } | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [undoProject, setUndoProject] = useState<TrashedProject | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
@@ -256,12 +263,13 @@ export default function WorkspacePage() {
     }
   }
 
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-    const { project, permanent } = pendingDelete;
+  async function confirmDelete(target: { project: ProjectSummary; permanent: boolean }) {
+    const { project, permanent } = target;
     const url = permanent
       ? `${API_BASE}/api/trash/${project.id}`
       : `${API_BASE}/api/projects/${project.id}`;
+    setDeleteInProgress(true);
+    setAnnouncement("");
     try {
       const response = await fetch(url, { method: "DELETE" });
       if (!response.ok) {
@@ -281,8 +289,9 @@ export default function WorkspacePage() {
         setAnnouncement(`“${project.name}”已移到回收站，可撤销。`);
       }
     } catch (error) {
-      setAnnouncement(error instanceof Error ? error.message : "删除失败，请稍后重试。");
+      setAnnouncement(requestErrorMessage(error, "删除失败，请稍后重试。"));
     } finally {
+      setDeleteInProgress(false);
       setPendingDelete(null);
     }
   }
@@ -447,8 +456,13 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
-        <AlertDialogContent>
+      <AlertDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteInProgress) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent aria-busy={deleteInProgress}>
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingDelete?.permanent ? "永久删除这个项目？" : "将项目移到回收站？"}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -458,10 +472,19 @@ export default function WorkspacePage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction variant={pendingDelete?.permanent ? "destructive" : "default"} onClick={() => void confirmDelete()}>
-              {pendingDelete?.permanent ? "永久删除" : "移到回收站"}
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={deleteInProgress}>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              variant={pendingDelete?.permanent ? "destructive" : "default"}
+              disabled={!pendingDelete || deleteInProgress}
+              onClick={() => {
+                if (pendingDelete) void confirmDelete(pendingDelete);
+              }}
+            >
+              {deleteInProgress
+                ? pendingDelete?.permanent ? "正在永久删除…" : "正在移动…"
+                : pendingDelete?.permanent ? "永久删除" : "移到回收站"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

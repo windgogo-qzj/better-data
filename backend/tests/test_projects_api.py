@@ -93,6 +93,37 @@ def test_project_trash_restore_and_permanent_delete(
     assert client.get("/api/trash").json() == []
 
 
+def test_trash_and_restore_fall_back_when_directory_replace_is_denied(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = client.post(
+        "/api/projects",
+        data={"name": "Windows 回收测试", "task_type": "cleaning"},
+        files={"dataset": ("source.csv", b"name,score\nA,1\n", "text/csv")},
+    ).json()
+    project_id = created["id"]
+    original_replace = Path.replace
+
+    def deny_directory_replace(source: Path, destination: Path) -> Path:
+        if source.is_dir():
+            raise PermissionError("simulated Windows directory rename denial")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", deny_directory_replace)
+
+    moved = client.delete(f"/api/projects/{project_id}")
+    assert moved.status_code == 200
+    assert not (tmp_path / "projects" / project_id).exists()
+    assert (tmp_path / "projects" / ".trash" / project_id).is_dir()
+
+    restored = client.post(f"/api/trash/{project_id}/restore")
+    assert restored.status_code == 200
+    assert (tmp_path / "projects" / project_id).is_dir()
+    assert not (tmp_path / "projects" / ".trash" / project_id).exists()
+
+
 def test_project_delete_rejects_invalid_or_missing_identifiers(client: TestClient) -> None:
     invalid = client.delete("/api/projects/not-a-project")
     missing = client.delete(f"/api/trash/{'0' * 32}")

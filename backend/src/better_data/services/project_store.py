@@ -197,7 +197,7 @@ class ProjectStore:
             {"schema_version": 1, "trashed_at": trashed_at.isoformat()},
         )
         try:
-            project_root.replace(destination)
+            self._move_directory(project_root, destination)
         except Exception:
             trash_metadata.unlink(missing_ok=True)
             raise
@@ -218,7 +218,7 @@ class ProjectStore:
         destination = self._project_root(project_id)
         if destination.exists():
             raise ValueError("项目库中已存在同名项目，无法恢复")
-        source.replace(destination)
+        self._move_directory(source, destination)
         (destination / "trash.json").unlink(missing_ok=True)
         return project
 
@@ -466,6 +466,26 @@ class ProjectStore:
         temporary = path.with_suffix(f"{path.suffix}.tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(path)
+
+    @staticmethod
+    def _move_directory(source: Path, destination: Path) -> None:
+        try:
+            source.replace(destination)
+            return
+        except PermissionError:
+            # Some Windows hosts deny renaming a directory into/out of the hidden
+            # .trash folder even though copying and removing its contents is allowed.
+            pass
+
+        try:
+            shutil.copytree(source, destination)
+            shutil.rmtree(source)
+        except Exception:
+            # If the source still exists, it remains the authoritative copy. Remove
+            # any partial destination so a later retry is not blocked by a ghost item.
+            if source.exists() and destination.exists():
+                shutil.rmtree(destination, ignore_errors=True)
+            raise
 
     def _assert_inside_library(self, path: Path) -> None:
         if path == self.root or self.root not in path.parents:

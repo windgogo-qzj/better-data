@@ -1,14 +1,18 @@
 # Better Data 开发路线图
 
-## MVP
+## MVP — v0.1.0 已完成（2026-09-11）
 
-- 项目库与项目生命周期
-- CSV 上传、流式副本、基础结构识别和预览
-- 纯清洗、分类及回归任务配置
-- 字段角色确认
-- 基础缺失、重复、类型、类别和缩放处理
-- 80/20 划分及训练集拟合边界
-- 快速评估、HTML 报告和 CSV 导出
+- [x] 项目库与项目生命周期
+- [x] CSV 上传、流式副本、基础结构识别和预览
+- [x] 纯清洗、分类及回归任务配置
+- [x] 字段角色确认
+- [x] 基础缺失、重复、类型、类别和缩放处理
+- [x] 80/20 划分及训练集拟合边界
+- [x] 快速评估、HTML 报告和 CSV 导出
+
+完成证据：PR [#11](https://github.com/windgogo-qzj/better-data/pull/11)、[#12](https://github.com/windgogo-qzj/better-data/pull/12)、[#13](https://github.com/windgogo-qzj/better-data/pull/13)、[#14](https://github.com/windgogo-qzj/better-data/pull/14)、[#15](https://github.com/windgogo-qzj/better-data/pull/15) 和 [#17](https://github.com/windgogo-qzj/better-data/pull/17) 均经 GitHub Actions 验证后合并。最终自动化基线为 29 项后端测试、前端 ESLint 和生产构建全部通过。
+
+MVP 的“已完成”只表示以上清单形成可运行闭环，不代表 v1.0 完成。XLSX 全量执行、聚类诊断、后台任务、完整 ZIP、Python 复现脚本、1 GB 性能优化和 Windows 安装包仍按下列阶段推进。
 
 ## Beta
 

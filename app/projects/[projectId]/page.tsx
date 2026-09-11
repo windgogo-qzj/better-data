@@ -7,7 +7,9 @@ import {
   ArrowLeft,
   Check,
   CircleAlert,
+  BarChart3,
   Database,
+  Download,
   FileSpreadsheet,
   LoaderCircle,
   Save,
@@ -97,6 +99,17 @@ type PipelineRun = {
   test_unknown_categories: Record<string, number>;
   artifacts: Record<string, { path: string; row_count: number; column_count: number; sha256: string }>;
 };
+type Evaluation = {
+  created_at: string;
+  mode: "off" | "quick";
+  same_split: boolean;
+  random_seed: number;
+  train_rows: number;
+  test_rows: number;
+  baseline: { name: string; metrics: Record<string, number> } | null;
+  complete: { name: string; metrics: Record<string, number> } | null;
+  artifacts: Record<string, { path: string; download_url: string; size: number; sha256: string }>;
+};
 
 async function readJson(response: Response) {
   const payload = await response.json();
@@ -116,6 +129,9 @@ export default function ProjectAnalysisPage() {
   const [savingRules, setSavingRules] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
   const [pipelineRun, setPipelineRun] = useState<PipelineRun | null>(null);
+  const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [evaluationMode, setEvaluationMode] = useState<"off" | "quick">("quick");
+  const [evaluating, setEvaluating] = useState(false);
   const [fieldsDirty, setFieldsDirty] = useState(false);
   const [rulesDirty, setRulesDirty] = useState(false);
   const [pipelineConfig, setPipelineConfig] = useState({
@@ -140,11 +156,14 @@ export default function ProjectAnalysisPage() {
       fetch(`${API_BASE}/api/projects/${projectId}/analysis`, { signal: controller.signal }).then(readJson),
       fetch(`${API_BASE}/api/projects/${projectId}/pipeline-runs/latest`, { signal: controller.signal })
         .then((response) => response.status === 404 ? null : readJson(response)),
+      fetch(`${API_BASE}/api/projects/${projectId}/evaluation`, { signal: controller.signal })
+        .then((response) => response.status === 404 ? null : readJson(response)),
     ])
-      .then(([projectPayload, analysisPayload, runPayload]: [Project, Analysis, PipelineRun | null]) => {
+      .then(([projectPayload, analysisPayload, runPayload, evaluationPayload]: [Project, Analysis, PipelineRun | null, Evaluation | null]) => {
         setProject(projectPayload);
         applyAnalysis(analysisPayload);
         setPipelineRun(runPayload);
+        setEvaluation(evaluationPayload);
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -188,6 +207,7 @@ export default function ProjectAnalysisPage() {
       const payload = await readJson(response) as Analysis;
       applyAnalysis(payload);
       setPipelineRun(null);
+      setEvaluation(null);
       setNotice("字段角色已确认，质量评分和建议已按新配置重新计算。");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "字段配置保存失败");
@@ -209,6 +229,7 @@ export default function ProjectAnalysisPage() {
       const payload = await readJson(response) as Analysis;
       applyAnalysis(payload);
       setPipelineRun(null);
+      setEvaluation(null);
       setNotice("建议选择已保存。冲突检查通过，但尚未执行任何数据变换。");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "建议选择保存失败");
@@ -229,12 +250,33 @@ export default function ProjectAnalysisPage() {
       });
       const payload = await readJson(response) as PipelineRun;
       setPipelineRun(payload);
+      setEvaluation(null);
       setProject((current) => current ? { ...current, status: "processed" } : current);
       setNotice(`预处理完成：训练集 ${payload.train_rows} 行，测试集 ${payload.test_rows} 行。`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "预处理执行失败");
     } finally {
       setRunningPipeline(false);
+    }
+  }
+
+  async function createEvaluation() {
+    if (!pipelineRun) return;
+    setEvaluating(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/evaluation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: evaluationMode }),
+      });
+      const payload = await readJson(response) as Evaluation;
+      setEvaluation(payload);
+      setNotice(evaluationMode === "quick" ? "快速评估、离线报告和 CSV 已生成。" : "评估已关闭，CSV 和离线报告已生成。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "结果生成失败");
+    } finally {
+      setEvaluating(false);
     }
   }
 
@@ -398,6 +440,31 @@ export default function ProjectAnalysisPage() {
               <div><Check aria-hidden="true" /><div><strong>最近一次预处理已完成</strong><p>训练集 {pipelineRun.train_rows} 行 · 测试集 {pipelineRun.test_rows} 行 · 输出 {pipelineRun.output_feature_columns.length} 个特征</p></div></div>
               <dl><div><dt>划分方式</dt><dd>{pipelineRun.stratified ? "固定种子分层" : "固定种子随机"}</dd></div><div><dt>缺失目标</dt><dd>{pipelineRun.target_missing_rows} 行</dd></div><div><dt>应用建议</dt><dd>{pipelineRun.applied_recommendation_ids.length} 条</dd></div><div><dt>内部文件</dt><dd>train.parquet / test.parquet</dd></div></dl>
               <p>评估、CSV 和 HTML 报告将在结果阶段生成；当前文件保存在项目 working 目录。</p>
+            </div>
+          )}
+        </section>
+
+        <section className="analysis-section" aria-labelledby="results-title">
+          <div className="analysis-section-header action-header">
+            <div><p className="panel-kicker">同一划分对比</p><h2 id="results-title">快速评估与导出</h2><p>分类使用逻辑回归，回归使用 Ridge；也可以关闭评估，只生成数据和报告。</p></div>
+            <Button onClick={createEvaluation} disabled={!pipelineRun || evaluating} aria-busy={evaluating}>
+              {evaluating ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <BarChart3 aria-hidden="true" />}
+              {evaluating ? "正在生成" : evaluation ? "重新生成" : "生成结果"}
+            </Button>
+          </div>
+          {!pipelineRun && <p className="pipeline-blocker" role="status"><TriangleAlert aria-hidden="true" />请先完成基础预处理，再生成评估与导出结果。</p>}
+          <fieldset className="evaluation-mode"><legend>评估档位</legend><label data-active={evaluationMode === "quick"}><input type="radio" name="evaluation-mode" value="quick" checked={evaluationMode === "quick"} onChange={() => setEvaluationMode("quick")} /><span><strong>快速</strong><small>对比最低限度兼容方案与完整方案</small></span></label><label data-active={evaluationMode === "off"}><input type="radio" name="evaluation-mode" value="off" checked={evaluationMode === "off"} onChange={() => setEvaluationMode("off")} /><span><strong>关闭</strong><small>只生成 CSV、报告和运行记录</small></span></label></fieldset>
+          {evaluation && (
+            <div className="evaluation-result">
+              <div className="fairness-note"><ShieldCheck aria-hidden="true" /><p>公平比较已确认：两个方案使用相同的 {evaluation.train_rows}/{evaluation.test_rows} 训练测试划分和随机种子 {evaluation.random_seed}。</p></div>
+              {evaluation.mode === "quick" && evaluation.baseline && evaluation.complete && (
+                <div className="comparison-grid">
+                  {[evaluation.baseline, evaluation.complete].map((scheme) => <article key={scheme.name}><h3>{scheme.name}</h3><dl>{Object.entries(scheme.metrics).map(([key, value]) => <div key={key}><dt>{({ accuracy: "准确率", balanced_accuracy: "平衡准确率", f1_weighted: "加权 F1", mae: "MAE", rmse: "RMSE", r2: "R²" } as Record<string, string>)[key] ?? key}</dt><dd>{value.toFixed(4)}</dd></div>)}</dl></article>)}
+                </div>
+              )}
+              <div className="download-grid">
+                {Object.entries(evaluation.artifacts).map(([key, artifact]) => <a key={key} href={`${API_BASE}${artifact.download_url}`} download><Download aria-hidden="true" /><span><strong>{key === "train_csv" ? "训练集 CSV" : key === "test_csv" ? "测试集 CSV" : "离线 HTML 报告"}</strong><small>{(artifact.size / 1024).toFixed(1)} KB · SHA-256 已记录</small></span></a>)}
+              </div>
             </div>
           )}
         </section>

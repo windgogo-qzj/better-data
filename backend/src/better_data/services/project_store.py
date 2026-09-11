@@ -21,6 +21,8 @@ from better_data.models import (
     RecommendationSelectionUpdate,
     PipelineConfig,
     PipelineRunRecord,
+    EvaluationMode,
+    EvaluationRecord,
     TaskType,
 )
 from better_data.services.analysis import (
@@ -30,6 +32,7 @@ from better_data.services.analysis import (
 )
 from better_data.services.profiling import profile_dataset
 from better_data.services.pipeline import run_preprocessing_pipeline
+from better_data.services.evaluation import build_evaluation_and_exports
 
 
 class ProjectStore:
@@ -238,6 +241,7 @@ class ProjectStore:
             project_root / "working",
             config,
         )
+        self._invalidate_results(project_root)
         self._write_json_atomic(
             project_root / "pipeline-config.json", config.model_dump(mode="json")
         )
@@ -245,6 +249,44 @@ class ProjectStore:
         project.error = None
         self._write_record(project_root, project)
         return result
+
+    def create_evaluation(
+        self, project_id: str, mode: EvaluationMode
+    ) -> EvaluationRecord:
+        project = self.get(project_id)
+        analysis = self.get_analysis(project_id)
+        pipeline_run = self.get_pipeline_run(project_id)
+        project_root = self._project_root(project_id)
+        return build_evaluation_and_exports(
+            project, analysis, pipeline_run, project_root, mode
+        )
+
+    def get_evaluation(self, project_id: str) -> EvaluationRecord:
+        self.get(project_id)
+        path = self._project_root(project_id) / "results" / "evaluation.json"
+        if not path.is_file():
+            raise KeyError("evaluation")
+        try:
+            return EvaluationRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("评估记录损坏，无法读取") from exc
+
+    def artifact_path(self, project_id: str, artifact_name: str) -> tuple[Path, str]:
+        project_root = self._project_root(project_id)
+        self.get(project_id)
+        allowed = {
+            "train-csv": (project_root / "exports" / "train.csv", "train.csv"),
+            "test-csv": (project_root / "exports" / "test.csv", "test.csv"),
+            "report": (project_root / "reports" / "report.html", "better-data-report.html"),
+        }
+        if artifact_name not in allowed:
+            raise KeyError(artifact_name)
+        path, filename = allowed[artifact_name]
+        resolved = path.resolve()
+        self._assert_inside_library(resolved)
+        if not resolved.is_file():
+            raise KeyError(artifact_name)
+        return resolved, filename
 
     def get_pipeline_run(self, project_id: str) -> PipelineRunRecord:
         self.get(project_id)
@@ -268,10 +310,21 @@ class ProjectStore:
             project_root / "working" / "target-missing.parquet",
         ):
             path.unlink(missing_ok=True)
+        self._invalidate_results(project_root)
         project = self.get(project_id)
         if project.status == ProjectStatus.PROCESSED:
             project.status = ProjectStatus.READY
             self._write_record(project_root, project)
+
+    @staticmethod
+    def _invalidate_results(project_root: Path) -> None:
+        for path in (
+            project_root / "results" / "evaluation.json",
+            project_root / "reports" / "report.html",
+            project_root / "exports" / "train.csv",
+            project_root / "exports" / "test.csv",
+        ):
+            path.unlink(missing_ok=True)
 
     def _project_root(self, project_id: str) -> Path:
         if not re.fullmatch(r"[0-9a-f]{32}", project_id):

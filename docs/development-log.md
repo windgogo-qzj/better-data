@@ -483,7 +483,7 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 | Pull Request | [#23 重构首页、工作台与项目生命周期](https://github.com/windgogo-qzj/better-data/pull/23) |
 | 分支 | `codex/ui-lifecycle-redesign` |
 | 核心提交 | `efcf619 feat: 重构界面并补齐项目回收站` |
-| 当前阶段 | PR #23 已创建，等待 GitHub Actions 远端验收 |
+| 当前阶段 | PR #23 已通过 GitHub Actions 前端构建与后端测试 |
 
 ### 问题复核
 
@@ -510,6 +510,7 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 - 后端 `pytest`：**31 passed**；保留三条既有依赖/缓存非阻断警告。
 - Unslop UI 高严重度扫描：**0 findings，vibe score 0**。
 - 浏览器视觉检查覆盖 1440px 桌面首页、流程区、工作台、新建项目，以及 375px 级移动首页和工作台；未发现横向溢出。
+- GitHub Actions：前端构建与后端测试均通过。
 
 ### 关键决策
 

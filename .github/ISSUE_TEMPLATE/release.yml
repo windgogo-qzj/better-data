@@ -1,0 +1,57 @@
+name: 版本发布
+description: 规划并验证一个可审计的 Better Data 版本
+title: "[发布] Better Data v"
+labels: ["发布"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 标签使用 vX.Y.Z，代码版本使用 X.Y.Z。
+      placeholder: v0.1.1
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 发布范围
+      description: 列出纳入本版本的 Issue、PR 和用户可见变化。
+    validations:
+      required: true
+  - type: checkboxes
+    id: preparation
+    attributes:
+      label: 发布准备
+      options:
+        - label: 已建立并核对版本 Milestone
+        - label: 已审计上一个标签以来的提交、PR、Issue 和变更记录
+        - label: 版本号、CHANGELOG、README、开发日志和发布说明已同步
+        - label: 文档与截图只使用合成数据，不包含本机项目或敏感信息
+  - type: checkboxes
+    id: quality
+    attributes:
+      label: 质量门禁
+      options:
+        - label: pnpm lint 通过
+        - label: pnpm build 通过
+        - label: 后端 pytest 全部通过
+        - label: git diff --check 通过
+        - label: 关键用户链路和项目生命周期已完成验证
+        - label: GitHub Actions 全部通过
+  - type: checkboxes
+    id: publish
+    attributes:
+      label: 发布与收尾
+      options:
+        - label: 发布 PR 已审阅并合并到 main
+        - label: 带说明标签指向发布合并提交
+        - label: GitHub Release 已创建并验证
+        - label: 版本健康检查、README 链接和源代码归档可用
+        - label: Release Issue 与 Milestone 已关闭
+  - type: textarea
+    id: risks
+    attributes:
+      label: 风险、限制与回滚
+      description: 记录已知限制、阻断条件和出现问题时的处理方式。
+    validations:
+      required: true

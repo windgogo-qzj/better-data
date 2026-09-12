@@ -653,30 +653,6 @@
   background: linear-gradient(90deg, #6f9cff 0 52%, rgb(255 255 255 / 0.24) 52% 100%);
 }
 
-.workflow-visual-result {
-  position: absolute;
-  right: clamp(1.5rem, 4vw, 3rem);
-  bottom: clamp(1.5rem, 4vw, 3rem);
-  display: grid;
-  min-width: 12rem;
-  border-left: 3px solid #f4b557;
-  background: rgb(8 15 28 / 0.7);
-  padding: 1rem 1.25rem;
-  backdrop-filter: blur(10px);
-}
-
-.workflow-visual-result small {
-  color: #a9b8ce;
-  font-size: 0.8rem;
-}
-
-.workflow-visual-result strong {
-  margin-top: 0.25rem;
-  color: #fff;
-  font-size: clamp(1.65rem, 3vw, 2.65rem);
-  letter-spacing: -0.04em;
-}
-
 .workflow-v3-assurance {
   display: grid;
   grid-template-columns: auto auto 1fr;

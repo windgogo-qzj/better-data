@@ -76,7 +76,7 @@ work/projects/<project-id>/
 └─ logs/         # 操作与错误记录
 ```
 
-项目被移除时会完整移动到项目库同级的 `.trash/<project-id>/`，`project.json` 中记录移除时间。恢复时保留原项目 ID；如果项目库已存在同名 ID，服务端会拒绝覆盖。永久删除只接受严格的 32 位十六进制项目 ID，并再次校验目标目录位于 `.trash` 内。
+项目被移除时会完整移动到项目库同级的 `.trash/<project-id>/`，`project.json` 中记录移除时间。恢复时保留原项目 ID；如果项目库已存在同名 ID，服务端会拒绝覆盖。Windows 下目录被短暂占用时会使用同卷安全移动回退。永久删除只接受严格的 32 位十六进制项目 ID，并再次校验目标目录位于 `.trash` 内。
 
 流水线成功后，`working/` 包含处理后的 `train.parquet`、`test.parquet`，同一划分的 `train-raw.parquet`、`test-raw.parquet`，以及 `target-missing.parquet` 和 `pipeline-state.json`。字段角色或建议选择改变时，这些派生文件会失效并删除；`source/` 中的原始文件不受影响。
 
@@ -88,9 +88,9 @@ work/projects/<project-id>/
 
 ## CSV 导入边界
 
-- MVP 接受 UTF-8 与 UTF-8 BOM 编码。
+- 接受 UTF-8、UTF-8 BOM、GB18030 与 Windows-1252 编码，并将读取结果统一交给后续画像流程。
 - 支持逗号、分号、TAB 和竖线分隔符自动识别。
-- 空文件、空表头、重复表头、损坏行和不支持的编码会返回明确错误。
+- 空文件、空表头、重复表头、损坏行和无法识别的编码会返回明确错误。
 - 画像读取行数由 `profile_sample_rows` 控制，返回 `is_sampled`、字段统计和最多五行预览。
 - 画像失败的项目保留原始文件和错误记录；未完成上传的临时项目会被清理。
 

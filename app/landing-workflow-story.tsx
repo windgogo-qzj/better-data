@@ -17,8 +17,6 @@ type Stage = {
   description: string;
   evidence: string;
   outcome: string;
-  visualLabel: string;
-  visualValue: string;
   icon: ComponentType<{ "aria-hidden"?: boolean }>;
 };
 
@@ -30,8 +28,6 @@ const stages: Stage[] = [
     description: "自动检查缺失值、重复记录、类型异常与类别不一致，原始文件保持不变。",
     evidence: "94 个字段已完成结构检查",
     outcome: "问题被定位到具体字段与记录",
-    visualLabel: "发现",
-    visualValue: "3 类问题",
     icon: FileSearch,
   },
   {
@@ -41,8 +37,6 @@ const stages: Stage[] = [
     description: "建议同时说明问题证据、风险、置信度、预计影响与可选方案。",
     evidence: "规则 BD-MISSING-01，高置信度",
     outcome: "先理解影响，再决定是否采用",
-    visualLabel: "依据",
-    visualValue: "证据完整",
     icon: SlidersHorizontal,
   },
   {
@@ -52,8 +46,6 @@ const stages: Stage[] = [
     description: "确认字段角色与处理方案。系统负责解释和执行，不替你擅自修改。",
     evidence: "字段角色、规则与参数均可复核",
     outcome: "最终决定权留在数据人员手中",
-    visualLabel: "权限",
-    visualValue: "由你确认",
     icon: Check,
   },
   {
@@ -63,8 +55,6 @@ const stages: Stage[] = [
     description: "训练集学习填充值与类别词表，测试集只应用已确认的规则，避免信息泄漏。",
     evidence: "固定随机种子，可重复执行",
     outcome: "训练与测试边界始终清晰",
-    visualLabel: "边界",
-    visualValue: "80 / 20",
     icon: Play,
   },
   {
@@ -74,8 +64,6 @@ const stages: Stage[] = [
     description: "导出处理后的 CSV、离线 HTML 报告和完整运行记录。",
     evidence: "数据、报告、规则记录同步生成",
     outcome: "结果可以复核，也可以重新执行",
-    visualLabel: "交付",
-    visualValue: "CSV + HTML",
     icon: Download,
   },
 ];
@@ -130,10 +118,6 @@ function WorkflowMaterial({ stage }: { stage: Stage }) {
   return (
     <div className={`workflow-material workflow-material-${stage.id}`} aria-hidden="true">
       {visual}
-      <div className="workflow-visual-result">
-        <small>{stage.visualLabel}</small>
-        <strong>{stage.visualValue}</strong>
-      </div>
     </div>
   );
 }

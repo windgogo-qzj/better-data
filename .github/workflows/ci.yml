@@ -9,10 +9,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     name: 前端构建
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -23,12 +28,14 @@ jobs:
           node-version: 22.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --dangerously-allow-all-builds
+      - run: pnpm check:version
       - run: pnpm lint
       - run: pnpm build
 
   backend:
     name: 后端测试
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,5 +43,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e ".\backend[dev]"
-      - run: python -m pytest
+      - run: python -m pytest -q
         working-directory: backend

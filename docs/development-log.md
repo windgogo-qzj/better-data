@@ -602,8 +602,8 @@ PR #15 合并后按冻结路线图逐项验收，发现“纯数据清洗”虽�
 | Milestone | [v0.1.1](https://github.com/windgogo-qzj/better-data/milestone/4) |
 | Release Issue | [#29 发布 Better Data v0.1.1](https://github.com/windgogo-qzj/better-data/issues/29) |
 | 发布分支 | `codex/release-v0.1.1` |
-| Pull Request | 待创建并通过 CI 后补录 |
-| 当前阶段 | 版本、文档、截图与发布规范整理中 |
+| Pull Request | [#30 发布 Better Data v0.1.1](https://github.com/windgogo-qzj/better-data/pull/30) |
+| 当前阶段 | 本地质量门禁已通过，PR #30 等待 GitHub Actions 与合并 |
 
 ### 发布审计范围
 
